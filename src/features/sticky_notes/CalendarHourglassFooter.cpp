@@ -12,6 +12,7 @@
 #include "CalendarDate.h"
 #include "CrossPointSettings.h"
 #include "StickyNotesConfig.h"
+#include "StickyNotesStore.h"
 
 namespace calendar_app {
 
@@ -40,6 +41,9 @@ uint32_t refreshIntervalSeconds(const uint8_t interval) {
 
 bool currentCalendarSleepState(uint16_t& year, uint8_t& month, uint8_t& day, uint8_t& hour, uint8_t& minute,
                                uint8_t& second, uint32_t& wakeSeconds) {
+#if CROSSINK_ENABLE_STICKY_NOTES
+  if (!sticky_note::Store::recoverSnapshot()) return false;
+#endif
   const uint32_t intervalSeconds = refreshIntervalSeconds(SETTINGS.calendarClockRefreshInterval);
   if (intervalSeconds == 0 || SETTINGS.calendarHourglassFooter == 0 || SETTINGS.clockDateHasBeenSynced == 0 ||
       SETTINGS.sleepScreen != CrossPointSettings::CALENDAR_SLEEP ||
@@ -77,15 +81,18 @@ void drawHourglassFooter(const GfxRenderer& renderer, const uint8_t hour, const 
   const int footerLeft = std::max(marginLeft, noteSideInset);
   const int footerRight = std::min(screenWidth - marginRight, screenWidth - noteSideInset);
   const int availableWidth = footerRight - footerLeft;
-  if (availableWidth <= HOURGLASS_COLUMNS * HOURGLASS_BLOCK_MARGIN * 2 || footerTop < marginTop) return;
+  const int blockAreaWidth = availableWidth - HOURGLASS_GROUP_GAP;
+  if (blockAreaWidth <= HOURGLASS_COLUMNS * HOURGLASS_BLOCK_MARGIN * 2 || footerTop < marginTop) return;
 
   renderer.fillRect(marginLeft, footerTop, screenWidth - marginLeft - marginRight, HOURGLASS_FOOTER_HEIGHT, false);
 
   for (int segment = 0; segment < HOURGLASS_COLUMNS * HOURGLASS_ROWS; ++segment) {
     const int row = segment / HOURGLASS_COLUMNS;
     const int column = segment % HOURGLASS_COLUMNS;
-    const int slotLeft = footerLeft + column * availableWidth / HOURGLASS_COLUMNS;
-    const int slotRight = footerLeft + (column + 1) * availableWidth / HOURGLASS_COLUMNS;
+    const int groupGapLeft = column >= HOURGLASS_COLUMNS / 2 ? HOURGLASS_GROUP_GAP : 0;
+    const int groupGapRight = column + 1 > HOURGLASS_COLUMNS / 2 ? HOURGLASS_GROUP_GAP : 0;
+    const int slotLeft = footerLeft + column * blockAreaWidth / HOURGLASS_COLUMNS + groupGapLeft;
+    const int slotRight = footerLeft + (column + 1) * blockAreaWidth / HOURGLASS_COLUMNS + groupGapRight;
     const int x = slotLeft + HOURGLASS_BLOCK_MARGIN;
     const int y = footerTop + row * (HOURGLASS_BLOCK_HEIGHT + HOURGLASS_BLOCK_MARGIN * 2) +
                   HOURGLASS_BLOCK_MARGIN;

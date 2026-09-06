@@ -116,11 +116,16 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeSeco
   // Cut the gated peripheral rails (touch/SD/EPD on boards like the Sticky) and
   // hold the enables off through deep sleep — otherwise the GT911 and SD card
   // stay powered all through "off" and drain the battery. No-op on boards with
-  // no switched rails (X4/X3). Trade-off: no touch-to-wake; wake is the power
+  // no switched rails (such as X4). Trade-off: no touch-to-wake; wake is the power
   // button. Must run after display.deepSleep() so the panel controller gets its
   // deep-sleep command while its rail is still up (enterDeepSleep() in main.cpp
   // guarantees that ordering).
-  freeink::PowerManager::powerDownRailsForSleep();
+  // X3 GPIO13 is described by the board profile as the SD power enable, but
+  // field behavior shows that pulling it LOW also prevents an ESP32 timer wake
+  // while battery-powered. Keep it asserted only for scheduled Calendar wakes;
+  // ordinary power-button-only sleep retains the lower-drain rail shutdown.
+  const bool keepX3TimerRailPowered = timerWakeSeconds > 0 && gpio.deviceIsX3();
+  freeink::PowerManager::powerDownRailsForSleep(keepX3TimerRailPowered);
 
   // The SDK convenience helper currently isolates every GPIO after arming the
   // wake source. On the ESP32-C3 that overwrites the power pin's sleep input
@@ -131,9 +136,13 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeSeco
   freeink::PowerManager::armPowerButtonWakeup();
   if (timerWakeSeconds > 0) {
     const esp_err_t result = esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(timerWakeSeconds) * 1000000ULL);
+    LOG_INF("PWR", "Timer wake requested: %lu seconds result=%d", static_cast<unsigned long>(timerWakeSeconds),
+            static_cast<int>(result));
     if (result != ESP_OK) {
       LOG_ERR("PWR", "Failed to arm deep-sleep timer wake: %d", static_cast<int>(result));
     }
+  } else {
+    LOG_INF("PWR", "Timer wake not requested");
   }
   gpio_deep_sleep_hold_en();
   esp_deep_sleep_start();

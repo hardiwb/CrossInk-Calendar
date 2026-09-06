@@ -1,0 +1,32 @@
+<div class="calendar-card">
+  <div class="month-bar">
+    <button class="month-button" type="button" onclick="moveMonth(-1)" aria-label="Previous month">&#8249;</button>
+    <h2 id="month-title">Calendar</h2>
+    <button class="month-button" type="button" onclick="moveMonth(1)" aria-label="Next month">&#8250;</button>
+  </div>
+  <div class="weekday-row" aria-hidden="true">
+    <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+  </div>
+  <div id="calendar-grid" class="calendar-grid" aria-label="Month"></div>
+</div>
+
+<div class="editor-card">
+  <div class="editor-heading">
+    <div>
+      <span class="eyebrow">Selected date</span>
+      <h2 id="selected-title">Choose a day</h2>
+    </div>
+    <span id="entry-state" class="entry-state"></span>
+  </div>
+  <textarea id="entry-message" maxlength="2048" placeholder="Add appointments or checklist items here..." disabled></textarea>
+  <div class="editor-actions">
+    <span id="character-count">0 / 2048</span>
+    <div>
+      <button id="delete-button" class="danger-button" type="button" onclick="deleteEntry()" disabled>Delete</button>
+      <button id="save-button" class="save-button" type="button" onclick="saveEntry()" disabled>Save entry</button>
+    </div>
+  </div>
+  <p id="message" class="message" role="status"></p>
+</div>
+
+<p class="device-note"><strong>Xteink X3 only.</strong> Calendar and timed clock refresh are not supported on Xteink X4.</p>

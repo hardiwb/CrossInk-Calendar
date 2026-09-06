@@ -28,6 +28,7 @@ JS_OUT = os.path.join(OUT, "js")
 PAGES = {
     "home":     ("HomePageHtml",     "CrossInk",                   "home",     ""),
     "files":    ("FilesPageHtml",    "Files - CrossInk",           "files",    '  <script src="/js/jszip.min.js"></script>'),
+    "calendar": ("CalendarPageHtml", "Calendar - CrossInk",        "calendar", ""),
     "settings": ("SettingsPageHtml", "Settings - CrossInk Reader", "settings", ""),
     "fonts":    ("FontsPageHtml",    "Fonts - CrossInk",           "fonts",    ""),
 }
@@ -97,7 +98,7 @@ for slug, (ident, title, active, head_extra) in PAGES.items():
     values = {
         "title": title, "v": v, "head_extra": head_extra,
         "styles": page_css, "body": page_html, "script": script,
-        "cls_home": "", "cls_files": "", "cls_settings": "", "cls_fonts": "",
+        "cls_home": "", "cls_files": "", "cls_calendar": "", "cls_settings": "", "cls_fonts": "",
     }
     values[f"cls_{active}"] = ' class="active"'
     html = minify_html(render(base, values))

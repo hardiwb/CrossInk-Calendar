@@ -29,6 +29,8 @@
 #include "SettingsList.h"
 #include "WebDAVHandler.h"
 #include "WifiCredentialStore.h"
+#include "features/sticky_notes/StickyNotesStore.h"
+#include "html/CalendarPageHtml.generated.h"
 #include "html/FilesPageHtml.generated.h"
 #include "html/FontsPageHtml.generated.h"
 #include "html/HomePageHtml.generated.h"
@@ -103,12 +105,47 @@ bool isWebSettingAvailable(const SettingInfo& setting) {
   return true;
 }
 
-// Streams a font-catalog JSON response in bounded pieces. This avoids holding
+bool parseUnsignedArg(WebServer& server, const char* name, const unsigned minimum, const unsigned maximum,
+                      unsigned& value) {
+  if (!server.hasArg(name)) return false;
+  const String text = server.arg(name);
+  if (text.isEmpty() || text.length() > 4) return false;
+  unsigned parsed = 0;
+  for (size_t i = 0; i < text.length(); ++i) {
+    const char c = text.charAt(i);
+    if (c < '0' || c > '9') return false;
+    parsed = parsed * 10U + static_cast<unsigned>(c - '0');
+  }
+  if (parsed < minimum || parsed > maximum) return false;
+  value = parsed;
+  return true;
+}
+
+#if CROSSINK_ENABLE_STICKY_NOTES
+bool parseCalendarDate(WebServer& server, uint16_t& year, uint8_t& month, uint8_t& day) {
+  unsigned parsedYear = 0;
+  unsigned parsedMonth = 0;
+  unsigned parsedDay = 0;
+  if (!parseUnsignedArg(server, "year", 2024, 2099, parsedYear) ||
+      !parseUnsignedArg(server, "month", 1, 12, parsedMonth) ||
+      !parseUnsignedArg(server, "day", 1, 31, parsedDay) ||
+      !sticky_note::validDate(static_cast<uint16_t>(parsedYear), static_cast<uint8_t>(parsedMonth),
+                              static_cast<uint8_t>(parsedDay))) {
+    return false;
+  }
+  year = static_cast<uint16_t>(parsedYear);
+  month = static_cast<uint8_t>(parsedMonth);
+  day = static_cast<uint8_t>(parsedDay);
+  return true;
+}
+#endif
+
+// Streams JSON responses in bounded pieces. This avoids holding
 // both an ArduinoJson document and its serialized String in the fragmented
 // network heap, and gives WiFi a chance to drain each piece before the next.
-class FontListJsonWriter {
+class BoundedJsonWriter {
  public:
-  explicit FontListJsonWriter(WebServer& server) : server_(server) {}
+  explicit BoundedJsonWriter(WebServer& server) : server_(server) {}
 
   void append(const char* text) { append(text, strlen(text)); }
 
@@ -299,6 +336,7 @@ void CrossPointWebServer::begin() {
   // Setup routes
   server->on("/", HTTP_GET, [this] { handleRoot(); });
   server->on("/files", HTTP_GET, [this] { handleFileList(); });
+  server->on("/calendar", HTTP_GET, [this] { handleCalendarPage(); });
   server->on("/js/jszip.min.js", HTTP_GET, [this] { handleJszip(); });
   server->on("/style.css", HTTP_GET, [this] { handleStyleCss(); });
   server->on("/logo.png", HTTP_GET, [this] { handleLogo(); });
@@ -321,6 +359,12 @@ void CrossPointWebServer::begin() {
 
   // Delete file/folder endpoint
   server->on("/delete", HTTP_POST, [this] { handleDelete(); });
+
+  // Calendar endpoints use compact responses to stay friendly to the X3 heap.
+  server->on("/api/calendar", HTTP_GET, [this] { handleCalendarMonth(); });
+  server->on("/api/calendar/entry", HTTP_GET, [this] { handleCalendarEntry(); });
+  server->on("/api/calendar/entry", HTTP_POST, [this] { handleCalendarEntrySave(); });
+  server->on("/api/calendar/entry/delete", HTTP_POST, [this] { handleCalendarEntryDelete(); });
 
   // Settings endpoints
   server->on("/settings", HTTP_GET, [this] { handleSettingsPage(); });
@@ -641,6 +685,121 @@ bool CrossPointWebServer::isEpubFile(const String& filename) const { return FsHe
 
 void CrossPointWebServer::handleFileList() const {
   sendHtmlContent(server.get(), FilesPageHtml, sizeof(FilesPageHtml));
+}
+
+void CrossPointWebServer::handleCalendarPage() const {
+  sendHtmlContent(server.get(), CalendarPageHtml, sizeof(CalendarPageHtml));
+}
+
+void CrossPointWebServer::handleCalendarMonth() const {
+#if CROSSINK_ENABLE_STICKY_NOTES
+  unsigned year = 0;
+  unsigned month = 0;
+  if (!parseUnsignedArg(*server, "year", 2024, 2099, year) ||
+      !parseUnsignedArg(*server, "month", 1, 12, month)) {
+    server->send(400, "text/plain", "Invalid calendar month");
+    return;
+  }
+
+  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server->send(200, "application/json", "");
+  BoundedJsonWriter json(*server);
+  json.append("{\"days\":[");
+  bool first = true;
+  for (uint8_t day = 1; day <= 31; ++day) {
+    if (!sticky_note::validDate(static_cast<uint16_t>(year), static_cast<uint8_t>(month), day)) break;
+    if (!sticky_note::Store::has(static_cast<uint16_t>(year), static_cast<uint8_t>(month), day)) continue;
+    if (!first) json.append(",");
+    json.appendUnsigned(day);
+    first = false;
+  }
+  json.append("]}");
+  json.flush();
+  server->sendContent("");
+#else
+  server->send(404, "text/plain", "Calendar is disabled");
+#endif
+}
+
+void CrossPointWebServer::handleCalendarEntry() {
+#if CROSSINK_ENABLE_STICKY_NOTES
+  uint16_t year = 0;
+  uint8_t month = 0;
+  uint8_t day = 0;
+  if (!parseCalendarDate(*server, year, month, day)) {
+    server->send(400, "text/plain", "Invalid calendar date");
+    return;
+  }
+
+  const bool exists = sticky_note::Store::has(year, month, day);
+  if (exists && !sticky_note::Store::load(year, month, day, calendarNote)) {
+    server->send(500, "text/plain", "Could not read calendar entry");
+    return;
+  }
+  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server->send(200, "application/json", "");
+  BoundedJsonWriter json(*server);
+  json.append(exists ? "{\"exists\":true,\"message\":" : "{\"exists\":false,\"message\":");
+  json.appendJsonString(exists ? calendarNote.message.data() : "");
+  json.append("}");
+  json.flush();
+  server->sendContent("");
+#else
+  server->send(404, "text/plain", "Calendar is disabled");
+#endif
+}
+
+void CrossPointWebServer::handleCalendarEntrySave() {
+#if CROSSINK_ENABLE_STICKY_NOTES
+  uint16_t year = 0;
+  uint8_t month = 0;
+  uint8_t day = 0;
+  if (!parseCalendarDate(*server, year, month, day) || !server->hasArg("message")) {
+    server->send(400, "text/plain", "Invalid calendar entry");
+    return;
+  }
+  const String message = server->arg("message");
+  const size_t length = message.length();
+  if (length == 0 || length > sticky_note::MAX_MESSAGE_BYTES ||
+      !sticky_note::validUtf8(reinterpret_cast<const uint8_t*>(message.c_str()), length)) {
+    server->send(400, "text/plain", "Entry must contain 1 to 2048 bytes of valid text");
+    return;
+  }
+
+  calendarNote = {};
+  calendarNote.year = year;
+  calendarNote.month = month;
+  calendarNote.day = day;
+  calendarNote.messageLength = static_cast<uint16_t>(length);
+  memcpy(calendarNote.message.data(), message.c_str(), length);
+  calendarNote.message[length] = '\0';
+  if (!sticky_note::Store::save(calendarNote)) {
+    server->send(500, "text/plain", "Could not save calendar entry");
+    return;
+  }
+  server->send(200, "application/json", "{\"saved\":true}");
+#else
+  server->send(404, "text/plain", "Calendar is disabled");
+#endif
+}
+
+void CrossPointWebServer::handleCalendarEntryDelete() {
+#if CROSSINK_ENABLE_STICKY_NOTES
+  uint16_t year = 0;
+  uint8_t month = 0;
+  uint8_t day = 0;
+  if (!parseCalendarDate(*server, year, month, day)) {
+    server->send(400, "text/plain", "Invalid calendar date");
+    return;
+  }
+  if (!sticky_note::Store::remove(year, month, day)) {
+    server->send(500, "text/plain", "Could not delete calendar entry");
+    return;
+  }
+  server->send(200, "application/json", "{\"deleted\":true}");
+#else
+  server->send(404, "text/plain", "Calendar is disabled");
+#endif
 }
 
 void CrossPointWebServer::handleFileListData() const {
@@ -1922,7 +2081,7 @@ void CrossPointWebServer::handleFontList() const {
   // can exhaust the fragmented network heap with larger font collections.
   server->setContentLength(CONTENT_LENGTH_UNKNOWN);
   server->send(200, "application/json", "");
-  FontListJsonWriter json(*server);
+  BoundedJsonWriter json(*server);
   json.append("{\"families\":[");
 
   bool firstFamily = true;

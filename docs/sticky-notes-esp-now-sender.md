@@ -10,13 +10,13 @@ BrokenSignal-Pro is not required.
 
 ## Receiver workflow
 
-1. On the Xteink, open **Menu > Sticky Notes > Receive Note**.
+1. On the Xteink X3, open **Menu > Calendar**. Listening starts immediately.
 2. The Xteink listens on ESP-NOW channel 1 for 60 seconds.
 3. Broadcast the note packet described below.
 4. Wait for the Xteink ACK.
 
 There is no persistent pairing and no shared encryption key. The receiver runs
-only from the Receive Note screen, so normal deep sleep is not interrupted.
+only during the Calendar view's listening window, so normal deep sleep is not interrupted.
 
 ## Text format
 
@@ -105,6 +105,50 @@ The receiver uses one activity-owned 2 KB buffer, not a full-message stack
 temporary. Callbacks copy only one small packet into a mailbox; the activity
 loop handles reassembly, validation, rendering and storage.
 
+## Version 3 full-calendar snapshot
+
+Use a snapshot when the sender's complete calendar should replace the X3
+calendar, including removal of dates deleted at the source. Send this sequence:
+
+1. A v3 `Begin` control packet.
+2. Every non-empty dated entry as an ordinary v1 or v2 note, sorted by ascending
+   `year`, `month`, and `day`. Each note needs its own non-zero sequence number.
+3. A v3 `Commit` control packet identical to `Begin` except for its type.
+
+Both control packets are exactly 20 bytes:
+
+| Offset | Size | Value |
+| ---: | ---: | --- |
+| 0 | 4 | ASCII `CINT` |
+| 4 | 1 | Protocol version `3` |
+| 5 | 1 | Packet type `3` (Begin) or `4` (Commit) |
+| 6 | 2 | Reserved zeros |
+| 8 | 4 | Non-zero snapshot sequence number |
+| 12 | 2 | Number of dated entries in the snapshot |
+| 14 | 2 | Reserved zeros |
+| 16 | 4 | Snapshot CRC-32 digest |
+
+The snapshot digest uses the same reflected CRC-32 parameters as v2. Start at
+`0xFFFFFFFF`; for each sorted entry update the CRC with these bytes:
+
+1. Year as two little-endian bytes.
+2. Month and day as one byte each.
+3. Message length as two little-endian bytes.
+4. The message bytes after replacing CR and tab with a normal space.
+
+Apply the final XOR `0xFFFFFFFF` after the last entry. The digest of an empty
+snapshot is zero. The entry count and digest must be identical in Begin and
+Commit. Retry each control until its matching version-3 ACK arrives. Send the
+next dated note only after the prior note's v1/v2 ACK arrives.
+
+The X3 writes all snapshot `.bin` entries and generated `.bmp` lock screens to
+`/.crosspoint/calendar.snapshot`. Commit succeeds only if the sender MAC,
+snapshot identity, strictly increasing dates, entry count, and digest match.
+It then swaps the staging directory into `/.crosspoint/calendar`, using
+`/.crosspoint/calendar.backup` for reboot recovery. Timeout, validation,
+rendering, storage, or interrupted-transfer failures discard staging and leave
+the old live calendar intact. A valid empty snapshot removes every dated entry.
+
 ## ACK packet
 
 After rendering and saving succeeds, the Xteink sends this 16-byte unicast
@@ -113,7 +157,7 @@ packet to the sender's source MAC:
 | Offset | Size | Value |
 | ---: | ---: | --- |
 | 0 | 4 | ASCII `CINT` |
-| 4 | 1 | Protocol version copied from the note (`1` or `2`) |
+| 4 | 1 | Protocol version copied from the note/control (`1`, `2`, or `3`) |
 | 5 | 1 | Packet type `2` (ACK) |
 | 6 | 1 | Reserved `0` |
 | 7 | 1 | Message length `0` |
@@ -133,6 +177,8 @@ without rendering or saving duplicate packets again.
 - Use a new random non-zero sequence for each new note.
 - For v1, retry the unchanged packet every 250-500 ms until its ACK arrives.
 - For v2, cycle all chunks every 100 ms; stop only on the final save ACK.
+- For v3, retry Begin and Commit independently, and wait for each dated note's
+  ACK before sending the next sorted entry.
 - Allow up to 30 seconds for reception, rendering and storage before timing out.
 - Restore the sender's previous Wi-Fi state/channel when finished.
 
@@ -142,15 +188,14 @@ use the signatures required by the sender project's installed core.
 
 ## Compatibility and display limits
 
-Both devices must be updated to send more than 220 bytes. Old senders remain
-supported, and the updated BrokenSignal sender uses v1 for small notes. Old
-receivers ignore v2 and will not acknowledge a larger transfer.
+Both devices must be updated to send more than 220 bytes or use full snapshots.
+Old v1/v2 senders remain supported. Receivers without v3 support ignore its
+control packets and therefore keep their existing upsert-only behavior.
 
-Each accepted transfer is an upsert for its header date. CrossInk stores the
-complete validated text under `/.crosspoint/calendar/`; resending the same date
-atomically replaces that day. No protocol change is required for calendar
-storage. In Calendar layout, stored dates in the displayed month receive a dot
-and the most recently received date is selected.
+Each accepted standalone v1/v2 transfer remains an upsert for its header date.
+Inside a v3 snapshot, those dated transfers are staged until Commit; only then
+does the snapshot replace the complete calendar. In Calendar layout, stored
+dates in the displayed month receive a dot and the selected date is highlighted.
 
 The lock screen remains a single image, not a paginated notebook. Larger
 messages use tighter card spacing. Text can be ellipsized within a row, and
@@ -160,10 +205,10 @@ validated message remains in its dated calendar file.
 
 ## Verification
 
-In the adjacent BrokenSignal-Pro repository, run `tools/test_sticky_chunks.ps1`
-with a host g++ compiler. It checks identical protocol headers and exercises
-both copies for legacy compatibility, 2 KB roundtrips, packet loss/reordering,
-duplicates, CRC/UTF-8 failures, invalid headers, sender isolation and timeouts.
-After flashing both devices, test a 221-2048 byte day through Receive Note.
-Interrupt a transfer and confirm the existing sleep image is preserved; then
-retry normally and verify the dated image and final sender acknowledgement.
+Run the host `StickyNoteProtocolTest` and the adjacent BrokenSignal-Pro protocol
+tests after copying the finalized v3 contract to the sender. After flashing
+both devices, test a 221-2048 byte day through Calendar Sync. Interrupt a
+snapshot and confirm the existing calendar remains intact. Then sync a source
+calendar with a removed date and verify that the X3 removes it only after the
+Commit ACK. Also test an empty snapshot and power interruption before and after
+the directory swap.

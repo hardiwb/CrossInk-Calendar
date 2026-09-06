@@ -151,11 +151,16 @@ void StickyNotesActivity::onEnter() {
     return;
   }
 #endif
-  prepareNoteFont();
+  if (!sticky_note::Store::recoverSnapshot()) {
+    setError(StrId::STR_STICKY_NOTE_SAVE_FAILED);
+    return;
+  }
   if (!loadCurrentLocalDate()) {
     state_ = State::Unsupported;
+    requestUpdate();
+    return;
   }
-  requestUpdate();
+  startReceiving();
 }
 
 void StickyNotesActivity::onExit() {
@@ -164,7 +169,7 @@ void StickyNotesActivity::onExit() {
   sdFontSystem.releaseLoadedFont(renderer);
   sdFontSystem.releaseRegistry();
   noteGlyphs_.reset();
-  if (radioUsed_) {
+  if (radioUsed_ && !leavingForWeb_) {
     if (returnToReader_)
       silentRestartToReader();
     else
@@ -193,22 +198,30 @@ void StickyNotesActivity::loop() {
     }
     const uint32_t now = millis();
     if (now - savedAtMs_ >= 2000) {
-      // Keep the radio session alive for a Cardputer calendar batch. Do not
-      // request a redraw here: the most recently saved lockscreen remains
-      // visible while the next dated note arrives.
+      // Keep the radio session alive for a Cardputer calendar batch and return
+      // to the full Calendar while the next dated note is pending.
       assembly_.reset();
       listeningStartedMs_ = now;
       state_ = State::Listening;
+      requestUpdate();
       return;
     }
     if (now - lastAckMs_ >= 350) {
       lastAckMs_ = now;
-      sendAck(assembly_.source(), lastSavedSequence_);
+      sendAck(lastSavedSourceMac_.data(), lastSavedSequence_, lastAckVersion_);
     }
     return;
   }
 #endif
   processPendingNote();
+
+  if ((state_ == State::Ready || state_ == State::Listening) && sleepImageNeedsRefresh_ &&
+      calendarFrameReady_.exchange(false)) {
+    sleepImageNeedsRefresh_ = false;
+    if (!saveNoteSleepImage() || !selectNoteSleepImage()) {
+      LOG_ERR(LOG_TAG, "Could not refresh web-edited Calendar sleep image");
+    }
+  }
 
   if (TouchHeaderBackButton::wasTapped(mappedInput, renderer) ||
       mappedInput.wasPressed(MappedInputManager::Button::Back)) {
@@ -216,14 +229,14 @@ void StickyNotesActivity::loop() {
     return;
   }
 
-  if ((state_ == State::Ready || state_ == State::Error) &&
+  if ((state_ == State::Ready || state_ == State::Listening || state_ == State::Error) &&
       mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
     mappedInput.suppressNextConfirmRelease();
-    startReceiving();
+    openWebCalendar();
     return;
   }
 
-  if ((state_ == State::Ready || (state_ == State::Listening && receivedAny_)) &&
+  if ((state_ == State::Ready || state_ == State::Listening) &&
       (mappedInput.wasPressed(MappedInputManager::Button::Left) ||
        mappedInput.wasPressed(MappedInputManager::Button::PageBack))) {
     if (state_ == State::Listening) {
@@ -234,7 +247,7 @@ void StickyNotesActivity::loop() {
     return;
   }
 
-  if ((state_ == State::Ready || (state_ == State::Listening && receivedAny_)) &&
+  if ((state_ == State::Ready || state_ == State::Listening) &&
       (mappedInput.wasPressed(MappedInputManager::Button::Right) ||
        mappedInput.wasPressed(MappedInputManager::Button::PageForward))) {
     if (state_ == State::Listening) {
@@ -245,7 +258,7 @@ void StickyNotesActivity::loop() {
     return;
   }
 
-  if ((state_ == State::Ready || state_ == State::Error) && uiReady_) {
+  if ((state_ == State::Listening || state_ == State::Error) && uiReady_) {
     const fui::InputSnapshot snapshot = touchSnapshotFrom(mappedInput);
     if (snapshot.touchPressed || snapshot.touchReleased) {
       const auto event = app_.route(snapshot);
@@ -255,20 +268,18 @@ void StickyNotesActivity::loop() {
   }
 
   if (state_ == State::Listening && millis() - listeningStartedMs_ >= RECEIVE_TIMEOUT_MS) {
-    if (receivedAny_) {
-      stopReceiving();
-      exitActivity();
-      return;
-    }
     stopReceiving();
-    setError(StrId::STR_STICKY_NOTE_TIMEOUT);
+    state_ = State::Ready;
+    requestUpdate();
+    return;
   }
 }
 
 void StickyNotesActivity::render(RenderLock&&) {
-  if (state_ == State::Ready) {
-    drawCalendarScreen();
+  if (state_ == State::Ready || state_ == State::Listening) {
+    drawCalendarScreen(state_ == State::Listening);
     renderer.displayBuffer(screenTransitionRefresh_.modeFor(static_cast<uint8_t>(state_)));
+    calendarFrameReady_ = true;
     return;
   }
 
@@ -278,15 +289,23 @@ void StickyNotesActivity::render(RenderLock&&) {
     return;
   }
 
+  if (state_ == State::Error && sleepImageNeedsRefresh_.exchange(false)) {
+    // Web edits remove the old bitmap. Rebuild it from the dated entry in the
+    // current framebuffer, then replace the buffer with the error screen
+    // before anything is sent to the e-ink panel.
+    drawCalendarScreen();
+    if (!saveNoteSleepImage() || !selectNoteSleepImage()) {
+      LOG_ERR(LOG_TAG, "Could not refresh web-edited Calendar sleep image");
+    }
+  }
+
   const char* status = tr(STR_STICKY_NOTE_READY);
-  if (state_ == State::Listening) {
-    status = tr(STR_STICKY_NOTE_LISTENING);
-  } else if (state_ == State::Error) {
+  if (state_ == State::Error) {
     status = I18n::getInstance().get(errorId_);
   } else if (state_ == State::Unsupported) {
     status = tr(STR_STICKY_NOTE_X4_UNSUPPORTED);
   }
-  drawStatusScreen(status, state_ == State::Ready || state_ == State::Error);
+  drawStatusScreen(status, state_ == State::Listening || state_ == State::Error);
   renderer.displayBuffer(screenTransitionRefresh_.modeFor(static_cast<uint8_t>(state_)));
 }
 
@@ -296,9 +315,9 @@ void StickyNotesActivity::menuScreen(UiApp::ScreenType& screen, void* user) {
 
 void StickyNotesActivity::onRowEvent(const fui::ActionEvent& event, void* user) {
   auto* self = static_cast<StickyNotesActivity*>(user);
-  if (event.value != 0 || (self->state_ != State::Ready && self->state_ != State::Error)) return;
+  if (event.value != 0 || (self->state_ != State::Listening && self->state_ != State::Error)) return;
   self->app_.clearTapFlash();
-  self->startReceiving();
+  self->openWebCalendar();
 }
 
 void StickyNotesActivity::buildMenuScreen(UiApp::ScreenType& screen) {
@@ -309,7 +328,7 @@ void StickyNotesActivity::buildMenuScreen(UiApp::ScreenType& screen) {
                   0, static_cast<int16_t>(metrics.buttonHintsHeight + metrics.verticalSpacing), 0});
 
   fui::ListItem item;
-  item.label = tr(STR_CALENDAR_SYNC);
+  item.label = tr(STR_BROWSE);
   item.actionValue = 0;
   fui::ListProps props;
   props.items = &item;
@@ -383,6 +402,8 @@ void StickyNotesActivity::loadSelectedDate() {
   note_.sequence = 0;
   note_.messageLength = 0;
   note_.message[0] = '\0';
+  sleepImageNeedsRefresh_ = false;
+  calendarFrameReady_ = false;
   if (sticky_note::Store::has(year, month, day) && !sticky_note::Store::load(year, month, day, note_)) {
     LOG_ERR(LOG_TAG, "Could not load calendar entry %04u-%02u-%02u", static_cast<unsigned>(year),
             static_cast<unsigned>(month), static_cast<unsigned>(day));
@@ -391,6 +412,12 @@ void StickyNotesActivity::loadSelectedDate() {
     note_.year = year;
     note_.month = month;
     note_.day = day;
+  }
+  if (note_.messageLength > 0) {
+    char imagePath[64];
+    if (calendar_app::formatSleepImagePath(imagePath, sizeof(imagePath), year, month, day)) {
+      sleepImageNeedsRefresh_ = !Storage.exists(imagePath);
+    }
   }
 }
 
@@ -405,6 +432,12 @@ void StickyNotesActivity::moveSelectedDay(const int deltaDays) {
   note_.day = day;
   loadSelectedDate();
   requestUpdate();
+}
+
+void StickyNotesActivity::openWebCalendar() {
+  stopReceiving();
+  leavingForWeb_ = true;
+  activityManager.goToFileTransfer();
 }
 
 void StickyNotesActivity::startReceiving() {
@@ -423,8 +456,10 @@ void StickyNotesActivity::startReceiving() {
   pendingLength_ = 0;
   assembly_.reset();
   xSemaphoreGive(pendingMutex_);
+  resetSnapshotState();
   receivedAny_ = false;
   lastSavedSequence_ = 0;
+  lastAckVersion_ = sticky_note::LEGACY_VERSION;
   lastSavedSourceMac_.fill(0);
   if (!radio_.begin(ESPNOW_CHANNEL, &StickyNotesActivity::onReceive, this)) {
     setError(StrId::STR_STICKY_NOTE_RADIO_FAILED);
@@ -437,6 +472,10 @@ void StickyNotesActivity::startReceiving() {
 
 void StickyNotesActivity::stopReceiving() {
 #ifndef SIMULATOR
+  if (snapshotActive_) {
+    sticky_note::Store::abortSnapshot();
+    resetSnapshotState();
+  }
   radio_.end();
 #endif
 }
@@ -445,17 +484,36 @@ void StickyNotesActivity::processPendingNote() {
 #ifndef SIMULATOR
   if (!pendingMutex_ || state_ != State::Listening) return;
   sticky_note::ReceiveResult result = sticky_note::ReceiveResult::Rejected;
+  sticky_note::SnapshotControl snapshotControl;
+  std::array<uint8_t, 6> controlSource{};
+  bool hasSnapshotControl = false;
   xSemaphoreTake(pendingMutex_, portMAX_DELAY);
   if (pending_) {
-    result = assembly_.accept(pendingSourceMac_.data(), pendingPacket_.data(), pendingLength_, millis(), note_);
+    hasSnapshotControl =
+        sticky_note::decodeSnapshotControl(pendingPacket_.data(), pendingLength_, snapshotControl);
+    if (hasSnapshotControl) {
+      controlSource = pendingSourceMac_;
+    } else if (!snapshotActive_ ||
+               std::equal(snapshotSourceMac_.begin(), snapshotSourceMac_.end(), pendingSourceMac_.begin())) {
+      result = assembly_.accept(pendingSourceMac_.data(), pendingPacket_.data(), pendingLength_, millis(), note_);
+    }
     pending_ = false;
   }
   xSemaphoreGive(pendingMutex_);
+  if (hasSnapshotControl) {
+    processSnapshotControl(controlSource.data(), snapshotControl);
+    return;
+  }
   if (result != sticky_note::ReceiveResult::Complete) return;
+
+  if (snapshotActive_ && !std::equal(snapshotSourceMac_.begin(), snapshotSourceMac_.end(), assembly_.source())) {
+    assembly_.reset();
+    return;
+  }
 
   if (receivedAny_ && note_.sequence == lastSavedSequence_ &&
       std::equal(lastSavedSourceMac_.begin(), lastSavedSourceMac_.end(), assembly_.source())) {
-    sendAck(assembly_.source(), note_.sequence);
+    sendAck(assembly_.source(), note_.sequence, assembly_.version());
     assembly_.reset();
     return;
   }
@@ -464,7 +522,19 @@ void StickyNotesActivity::processPendingNote() {
           static_cast<unsigned>(note_.messageLength),
           static_cast<unsigned>(sticky_note::chunkCount(note_.messageLength)),
           static_cast<unsigned>(assembly_.version()));
-  if (!sticky_note::Store::save(note_)) {
+  const uint32_t dateKey = static_cast<uint32_t>(note_.year) * 10000UL + static_cast<uint32_t>(note_.month) * 100UL +
+                           static_cast<uint32_t>(note_.day);
+  if (snapshotActive_ && dateKey <= snapshotLastDate_) {
+    LOG_ERR(LOG_TAG, "Calendar snapshot dates are not strictly increasing");
+    setError(StrId::STR_STICKY_NOTE_INVALID);
+    return;
+  }
+  if (snapshotActive_ && snapshotReceivedEntries_ >= snapshotExpectedEntries_) {
+    LOG_ERR(LOG_TAG, "Calendar snapshot contains more entries than declared");
+    setError(StrId::STR_STICKY_NOTE_INVALID);
+    return;
+  }
+  if (!(snapshotActive_ ? sticky_note::Store::saveSnapshot(note_) : sticky_note::Store::save(note_))) {
     setError(StrId::STR_STICKY_NOTE_SAVE_FAILED);
     return;
   }
@@ -473,14 +543,23 @@ void StickyNotesActivity::processPendingNote() {
   // bitmap is stored by its own date, so sleep can select today's file by RTC.
   const uint32_t receivedSequence = note_.sequence;
   lastSavedSequence_ = receivedSequence;
+  lastAckVersion_ = assembly_.version();
   std::copy_n(assembly_.source(), lastSavedSourceMac_.size(), lastSavedSourceMac_.begin());
   setState(State::Applying);
-  if (requestUpdateAndWait() != RequestUpdateResult::Rendered || !saveNoteSleepImage() || !selectNoteSleepImage()) {
+  const char* imageRoot = snapshotActive_ ? sticky_note::Store::snapshotRoot() : "/.crosspoint/calendar";
+  if (requestUpdateAndWait() != RequestUpdateResult::Rendered || !saveNoteSleepImage(imageRoot) ||
+      (!snapshotActive_ && !selectNoteSleepImage())) {
     setError(StrId::STR_STICKY_NOTE_SAVE_FAILED);
     return;
   }
 
-  const bool ackQueued = sendAck(assembly_.source(), receivedSequence);
+  if (snapshotActive_) {
+    snapshotDigestState_ = sticky_note::snapshotDigestUpdate(snapshotDigestState_, note_);
+    snapshotLastDate_ = dateKey;
+    ++snapshotReceivedEntries_;
+  }
+
+  const bool ackQueued = sendAck(assembly_.source(), receivedSequence, assembly_.version());
   if (!ackQueued) LOG_ERR(LOG_TAG, "Note saved but ACK could not be queued");
   receivedAny_ = true;
   savedAtMs_ = lastAckMs_ = millis();
@@ -508,7 +587,7 @@ void StickyNotesActivity::exitActivity() {
     finish();
 }
 
-void StickyNotesActivity::drawStatusScreen(const char* status, const bool showReceiveAction) {
+void StickyNotesActivity::drawStatusScreen(const char* status, const bool showWebAction) {
   renderer.clearScreen();
   const Rect header = TouchHeaderBackButton::headerRect(renderer, mappedInput);
   if (mappedInput.hasTouchHardware()) {
@@ -527,19 +606,25 @@ void StickyNotesActivity::drawStatusScreen(const char* status, const bool showRe
   }
 
   uiReady_ = false;
-  if (showReceiveAction) app_.render();
-  uiReady_ = showReceiveAction;
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), showReceiveAction ? tr(STR_SELECT) : "", "", "");
+  if (showWebAction) app_.render();
+  uiReady_ = showWebAction;
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), showWebAction ? tr(STR_BROWSE) : "", "", "");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }
 
-void StickyNotesActivity::drawCalendarScreen() {
+void StickyNotesActivity::drawCalendarScreen(const bool showListening) {
   renderer.clearScreen();
   const Rect header = TouchHeaderBackButton::headerRect(renderer, mappedInput);
-  if (mappedInput.hasTouchHardware()) {
-    TouchHeaderBackButton::draw(renderer, uiTarget_, header, tr(STR_CALENDAR), false);
+  char title[96];
+  if (showListening) {
+    snprintf(title, sizeof(title), "%s - %s", tr(STR_CALENDAR), tr(STR_CALENDAR_SYNC));
   } else {
-    GUI.drawHeader(renderer, header, tr(STR_CALENDAR));
+    snprintf(title, sizeof(title), "%s", tr(STR_CALENDAR));
+  }
+  if (mappedInput.hasTouchHardware()) {
+    TouchHeaderBackButton::draw(renderer, uiTarget_, header, title, false);
+  } else {
+    GUI.drawHeader(renderer, header, title);
   }
 
   Rect safeArea = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
@@ -552,7 +637,7 @@ void StickyNotesActivity::drawCalendarScreen() {
   prepareNoteGlyphCache(dateLine, noteStyle);
   drawCalendarTemplate(safeArea, dateLine, noteStyle, false, false);
 
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_CALENDAR_SYNC), tr(STR_DIR_LEFT),
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_BROWSE), tr(STR_DIR_LEFT),
                                             tr(STR_DIR_RIGHT));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   uiReady_ = false;
@@ -738,15 +823,17 @@ bool StickyNotesActivity::drawNoteCards(const int left, const int right, const i
   return row && *row;
 }
 
-bool StickyNotesActivity::saveNoteSleepImage() {
+bool StickyNotesActivity::saveNoteSleepImage(const char* root) {
   constexpr size_t PATH_BYTES = 64;
   char imagePath[PATH_BYTES];
   char tempPath[PATH_BYTES];
   char backupPath[PATH_BYTES];
-  if (!calendar_app::formatSleepImagePath(imagePath, sizeof(imagePath), note_.year, note_.month, note_.day) ||
-      !calendar_app::formatSleepImagePath(tempPath, sizeof(tempPath), note_.year, note_.month, note_.day, ".tmp") ||
-      !calendar_app::formatSleepImagePath(backupPath, sizeof(backupPath), note_.year, note_.month, note_.day,
-                                          ".bak")) {
+  if (!calendar_app::formatSleepImagePathInRoot(imagePath, sizeof(imagePath), root, note_.year, note_.month,
+                                                note_.day) ||
+      !calendar_app::formatSleepImagePathInRoot(tempPath, sizeof(tempPath), root, note_.year, note_.month, note_.day,
+                                                ".tmp") ||
+      !calendar_app::formatSleepImagePathInRoot(backupPath, sizeof(backupPath), root, note_.year, note_.month,
+                                                note_.day, ".bak")) {
     LOG_ERR(LOG_TAG, "Failed to build dated Calendar sleep-image path");
     return false;
   }
@@ -804,8 +891,106 @@ void StickyNotesActivity::enqueueNote(const uint8_t* sourceMac, const uint8_t* d
   xSemaphoreGive(pendingMutex_);
 }
 
-bool StickyNotesActivity::sendAck(const uint8_t* peerMac, const uint32_t sequence) {
-  const auto ack = sticky_note::makeAck(sequence, assembly_.version());
+void StickyNotesActivity::resetSnapshotState() {
+  snapshotActive_ = false;
+  snapshotSequence_ = 0;
+  snapshotExpectedDigest_ = 0;
+  snapshotDigestState_ = 0xffffffffU;
+  snapshotLastDate_ = 0;
+  snapshotExpectedEntries_ = 0;
+  snapshotReceivedEntries_ = 0;
+  snapshotSourceMac_.fill(0);
+}
+
+void StickyNotesActivity::processSnapshotControl(const uint8_t* sourceMac,
+                                                 const sticky_note::SnapshotControl& control) {
+  if (!sourceMac) return;
+  if (snapshotActive_ &&
+      !std::equal(snapshotSourceMac_.begin(), snapshotSourceMac_.end(), sourceMac)) {
+    return;
+  }
+
+  if (control.type == sticky_note::TYPE_SNAPSHOT_BEGIN) {
+    const bool repeatsCommittedSnapshot =
+        control.sequence == lastCommittedSnapshotSequence_ && control.entryCount == lastCommittedSnapshotEntries_ &&
+        control.digest == lastCommittedSnapshotDigest_ &&
+        std::equal(lastCommittedSnapshotSourceMac_.begin(), lastCommittedSnapshotSourceMac_.end(), sourceMac);
+    if (repeatsCommittedSnapshot) {
+      sendAck(sourceMac, control.sequence, sticky_note::SNAPSHOT_VERSION);
+      return;
+    }
+    if (snapshotActive_) {
+      const bool sameSnapshot = control.sequence == snapshotSequence_ &&
+                                control.entryCount == snapshotExpectedEntries_ &&
+                                control.digest == snapshotExpectedDigest_ &&
+                                std::equal(snapshotSourceMac_.begin(), snapshotSourceMac_.end(), sourceMac);
+      if (sameSnapshot) sendAck(sourceMac, control.sequence, sticky_note::SNAPSHOT_VERSION);
+      return;
+    }
+    if (!sticky_note::Store::beginSnapshot()) {
+      setError(StrId::STR_STICKY_NOTE_SAVE_FAILED);
+      return;
+    }
+    resetSnapshotState();
+    snapshotActive_ = true;
+    snapshotSequence_ = control.sequence;
+    snapshotExpectedDigest_ = control.digest;
+    snapshotExpectedEntries_ = control.entryCount;
+    std::copy_n(sourceMac, snapshotSourceMac_.size(), snapshotSourceMac_.begin());
+    LOG_INF(LOG_TAG, "Calendar snapshot started: %u entries", static_cast<unsigned>(control.entryCount));
+    sendAck(sourceMac, control.sequence, sticky_note::SNAPSHOT_VERSION);
+    listeningStartedMs_ = millis();
+    return;
+  }
+
+  if (!snapshotActive_) {
+    if (control.sequence == lastCommittedSnapshotSequence_ && control.entryCount == lastCommittedSnapshotEntries_ &&
+        control.digest == lastCommittedSnapshotDigest_ &&
+        std::equal(lastCommittedSnapshotSourceMac_.begin(), lastCommittedSnapshotSourceMac_.end(), sourceMac)) {
+      sendAck(sourceMac, control.sequence, sticky_note::SNAPSHOT_VERSION);
+    }
+    return;
+  }
+  const bool matchesSnapshot = control.sequence == snapshotSequence_ &&
+                               control.entryCount == snapshotExpectedEntries_ &&
+                               control.digest == snapshotExpectedDigest_ &&
+                               std::equal(snapshotSourceMac_.begin(), snapshotSourceMac_.end(), sourceMac);
+  const uint32_t receivedDigest = sticky_note::snapshotDigestFinish(snapshotDigestState_);
+  if (!matchesSnapshot || snapshotReceivedEntries_ != snapshotExpectedEntries_ || control.digest != receivedDigest) {
+    LOG_ERR(LOG_TAG, "Calendar snapshot commit validation failed (%u/%u entries)",
+            static_cast<unsigned>(snapshotReceivedEntries_), static_cast<unsigned>(snapshotExpectedEntries_));
+    setError(StrId::STR_STICKY_NOTE_INVALID);
+    return;
+  }
+  if (!sticky_note::Store::commitSnapshot()) {
+    setError(StrId::STR_STICKY_NOTE_SAVE_FAILED);
+    return;
+  }
+
+  lastCommittedSnapshotSequence_ = control.sequence;
+  lastCommittedSnapshotDigest_ = control.digest;
+  lastCommittedSnapshotEntries_ = control.entryCount;
+  std::copy_n(sourceMac, lastCommittedSnapshotSourceMac_.size(), lastCommittedSnapshotSourceMac_.begin());
+  resetSnapshotState();
+  receivedAny_ = true;
+  lastSavedSequence_ = control.sequence;
+  lastAckVersion_ = sticky_note::SNAPSHOT_VERSION;
+  std::copy_n(sourceMac, lastSavedSourceMac_.size(), lastSavedSourceMac_.begin());
+  if (!loadCurrentLocalDate()) {
+    LOG_ERR(LOG_TAG, "Calendar snapshot committed but the current RTC date could not be loaded");
+  }
+  if (!selectNoteSleepImage()) {
+    LOG_ERR(LOG_TAG, "Calendar snapshot committed but Calendar sleep mode could not be selected");
+  }
+  requestUpdate();
+  sendAck(sourceMac, control.sequence, sticky_note::SNAPSHOT_VERSION);
+  savedAtMs_ = lastAckMs_ = millis();
+  state_ = State::Saved;
+  LOG_INF(LOG_TAG, "Calendar snapshot committed: %u entries", static_cast<unsigned>(control.entryCount));
+}
+
+bool StickyNotesActivity::sendAck(const uint8_t* peerMac, const uint32_t sequence, const uint8_t version) {
+  const auto ack = sticky_note::makeAck(sequence, version);
   return radio_.send(peerMac, ack.data(), ack.size());
 }
 #endif

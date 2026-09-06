@@ -9,6 +9,11 @@
 #include <string>
 #include <vector>
 
+#include "features/sticky_notes/StickyNotesConfig.h"
+#if CROSSINK_ENABLE_STICKY_NOTES
+#include "features/sticky_notes/StickyNoteProtocol.h"
+#endif
+
 // Structure to hold file information
 struct FileInfo {
   String name;
@@ -106,6 +111,13 @@ class CrossPointWebServer {
   void handleMove() const;
   void handleDelete() const;
 
+  // Calendar handlers
+  void handleCalendarPage() const;
+  void handleCalendarMonth() const;
+  void handleCalendarEntry();
+  void handleCalendarEntrySave();
+  void handleCalendarEntryDelete();
+
   // Settings handlers
   void handleSettingsPage() const;
   void handleGetSettings() const;
@@ -132,6 +144,12 @@ class CrossPointWebServer {
 
     FontUploadState() { buffer.resize(BUFFER_SIZE); }
   } fontUpload;
+
+#if CROSSINK_ENABLE_STICKY_NOTES
+  // Reused request buffer: keeping the 2 KB note off the serving task's stack
+  // avoids stack pressure without repeated allocation churn.
+  sticky_note::Note calendarNote;
+#endif
 
   // OPDS server handlers
   void handleGetOpdsServers() const;

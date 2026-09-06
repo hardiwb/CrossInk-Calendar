@@ -5,9 +5,11 @@ nav_order: 2
 
 # Installation
 
+> **Warning:** The Xteink firmware from this Calendar fork is for the **Xteink X3 only**. Do not flash it onto an Xteink X4. The Calendar RTC timer-wake and GPIO13 power behavior are X3-specific and unsupported on X4 hardware.
+
 ## Supported Devices
 
-- Xteink X3, X4
+- Xteink X3
 - Seeed Studio Sticky
 
 ## Web Installation via USB

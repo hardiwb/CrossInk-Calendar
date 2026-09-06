@@ -34,6 +34,7 @@
 #include "features/sticky_notes/CalendarDate.h"
 #include "features/sticky_notes/CalendarHourglassFooter.h"
 #include "features/sticky_notes/StickyNotesConfig.h"
+#include "features/sticky_notes/StickyNotesStore.h"
 #include "images/Logo120.h"
 #include "images/MoonIcon.h"
 
@@ -519,6 +520,12 @@ void SleepActivity::onEnter() {
 }
 
 void SleepActivity::renderCalendarSleepScreen() const {
+#if CROSSINK_ENABLE_STICKY_NOTES
+  if (!sticky_note::Store::recoverSnapshot()) {
+    LOG_ERR("SLP", "Could not recover Calendar snapshot storage");
+    return renderDefaultSleepScreen();
+  }
+#endif
   uint16_t year = 0;
   uint8_t month = 0;
   uint8_t day = 0;

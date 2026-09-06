@@ -27,6 +27,10 @@ protocol and dated note files remain the compatibility foundation.
 - ESP-NOW v1/v2 receives a validated date and up to 2048 bytes of UTF-8 text.
 - Each date is atomically stored under `/.crosspoint/calendar/YYYY-MM-DD.bin`.
 - Re-sending a date replaces that date's entry.
+- ESP-NOW v3 control packets can bracket a complete calendar snapshot. The X3
+  stages its dated v1/v2 entries, validates the declared count and digest, then
+  replaces the live calendar directory in one recoverable commit. This lets a
+  sender remove dates that no longer exist at the source.
 - Calendar sleep-screen layout marks dates with retained entries.
 - The generated Sticky Notes bitmap remains selectable as the custom sleep
   image.
@@ -40,6 +44,9 @@ protocol and dated note files remain the compatibility foundation.
 5. Refresh the selected date and month markers after a successful sync.
 6. Preserve the existing atomic storage, acknowledgement, and sleep-image
    behavior.
+7. Treat a full Cardputer calendar sync as the source of truth: retain the old
+   X3 calendar until the complete snapshot validates, then replace it. An empty
+   snapshot intentionally clears the calendar.
 
 ## Twenty-four-segment hourglass clock
 
@@ -98,8 +105,11 @@ confirms acceptable display ghosting.
 
 ## Verification gates
 
-- X3: Calendar opens on the correct local date and manual Sync still receives
-  and acknowledges v1 and v2 notes.
+- X3: Calendar immediately listens on the correct local date and acknowledges
+  v1 and v2 notes; the Browse shortcut remains available beside Back.
+- X3: an interrupted v3 snapshot leaves the old calendar intact; a valid
+  snapshot removes dates absent from the source and survives a reboot during
+  the directory-swap recovery points.
 - X4: Calendar shows the RTC-required warning; radio initialization never
   occurs.
 - Sleep-entry snapshot: the correct hour rectangle and half-hour fade are shown

@@ -304,11 +304,18 @@ RTC_NOINIT_ATTR uint32_t silentReaderPageBuildMagic;
 RTC_NOINIT_ATTR uint32_t silentReaderPageBuildBookHash;
 RTC_NOINIT_ATTR uint32_t silentReaderPageBuildPackedTarget;
 RTC_NOINIT_ATTR uint32_t silentReaderPageBuildFlags;
+RTC_NOINIT_ATTR uint32_t calendarTimerDiagnosticMagic;
+RTC_NOINIT_ATTR uint32_t calendarTimerDiagnosticPhase;
+RTC_NOINIT_ATTR uint32_t calendarTimerDiagnosticSeconds;
 constexpr uint32_t SILENT_REBOOT_MAGIC = 0xC1EAB007;
 constexpr uint32_t SILENT_REBOOT_TARGET_HOME = 0;
 constexpr uint32_t SILENT_REBOOT_TARGET_READER = 1;
 constexpr uint32_t SILENT_READER_PAGE_BUILD_MAGIC = 0xC1EAB017;
 constexpr uint32_t SILENT_READER_PAGE_BUILD_AUTO_TURN = 1U << 0;
+constexpr uint32_t CALENDAR_TIMER_DIAGNOSTIC_MAGIC = 0xC1EA7017;
+constexpr uint32_t CALENDAR_TIMER_SLEEP_SCHEDULED = 1;
+constexpr uint32_t CALENDAR_TIMER_REFRESH_COMPLETED = 2;
+constexpr uint32_t CALENDAR_TIMER_REFRESH_FAILED = 3;
 constexpr uint32_t NETWORK_RENDER_TASK_STACK_BYTES = 8192;
 constexpr uint32_t READER_RENDER_TASK_STACK_BYTES = 16384;
 
@@ -708,7 +715,14 @@ void enterDeepSleep(bool fromTimeout) {
   uint32_t calendarWakeSeconds = 0;
 #ifndef SIMULATOR
   if (gpio.deviceIsX3()) {
-    calendar_app::calendarHourglassWakeDelay(calendarWakeSeconds);
+    const bool scheduled = calendar_app::calendarHourglassWakeDelay(calendarWakeSeconds);
+    LOG_INF("PWR", "Calendar timer schedule: scheduled=%d delay=%lu seconds", scheduled ? 1 : 0,
+            static_cast<unsigned long>(calendarWakeSeconds));
+    calendarTimerDiagnosticMagic = CALENDAR_TIMER_DIAGNOSTIC_MAGIC;
+    calendarTimerDiagnosticPhase = scheduled ? CALENDAR_TIMER_SLEEP_SCHEDULED : CALENDAR_TIMER_REFRESH_FAILED;
+    calendarTimerDiagnosticSeconds = calendarWakeSeconds;
+  } else {
+    LOG_INF("PWR", "Calendar timer skipped: device is not identified as X3");
   }
   powerManager.startDeepSleep(gpio, calendarWakeSeconds);
 #else
@@ -796,6 +810,17 @@ void setup() {
   logSerial.setTxTimeoutMs(1);  // This is a load-bearing 1. Do not modify.
 #endif
 #endif
+
+  if (calendarTimerDiagnosticMagic == CALENDAR_TIMER_DIAGNOSTIC_MAGIC) {
+    const char* phase = calendarTimerDiagnosticPhase == CALENDAR_TIMER_SLEEP_SCHEDULED
+                            ? "sleep scheduled"
+                            : calendarTimerDiagnosticPhase == CALENDAR_TIMER_REFRESH_COMPLETED
+                                ? "timer refresh completed"
+                                : calendarTimerDiagnosticPhase == CALENDAR_TIMER_REFRESH_FAILED ? "timer refresh failed"
+                                                                                                  : "unknown";
+    LOG_INF("BOOT", "Last Calendar timer diagnostic: %s delay=%lu seconds", phase,
+            static_cast<unsigned long>(calendarTimerDiagnosticSeconds));
+  }
 
   HalSystem::begin();
   LOG_INF("BOOT", "Reset diagnostic: reset=%d(%s) sleepWake=%d(%s)", static_cast<int>(rawResetReason),
@@ -910,7 +935,11 @@ void setup() {
     if (!refreshed) {
       nextWakeSeconds = 0;
       LOG_ERR("BOOT", "Calendar timer refresh stopped; returning to power-button-only sleep");
+      calendarTimerDiagnosticPhase = CALENDAR_TIMER_REFRESH_FAILED;
+    } else {
+      calendarTimerDiagnosticPhase = CALENDAR_TIMER_REFRESH_COMPLETED;
     }
+    calendarTimerDiagnosticSeconds = nextWakeSeconds;
     putTiltSensorToSleepForDeepSleep();
     powerManager.startDeepSleep(gpio, nextWakeSeconds);
     return;

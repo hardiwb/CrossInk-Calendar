@@ -8,7 +8,7 @@ normal browser without flashing the device.
     python3 scripts/preview_web.py 9000      # custom port
 
 Edits to web/ show up on refresh (pages are re-rendered per request). The mock
-API returns representative data so Settings/Files/Fonts render populated."""
+API returns representative data so Settings/Files/Calendar/Fonts render populated."""
 import os
 import re
 import sys
@@ -24,6 +24,7 @@ JSZIP = os.path.join(ROOT, "src", "network", "html", "js", "jszip.min.js")
 PAGES = {
     "home":     ("/",         "CrossInk",                   "home",     ""),
     "files":    ("/files",    "Files - CrossInk",           "files",    '  <script src="/js/jszip.min.js"></script>'),
+    "calendar": ("/calendar", "Calendar - CrossInk",        "calendar", ""),
     "settings": ("/settings", "Settings - CrossInk Reader", "settings", ""),
     "fonts":    ("/fonts",    "Fonts - CrossInk",           "fonts",    ""),
 }
@@ -41,7 +42,7 @@ def render_page(slug):
         "styles": read(WEB, "pages", f"{slug}.css"),
         "body": read(WEB, "pages", f"{slug}.html"),
         "script": f"<script>\n{js}\n</script>" if js else "",
-        "cls_home": "", "cls_files": "", "cls_settings": "", "cls_fonts": "",
+        "cls_home": "", "cls_files": "", "cls_calendar": "", "cls_settings": "", "cls_fonts": "",
     }
     values[f"cls_{active}"] = ' class="active"'
     base = read(WEB, "templates", "base.html")
@@ -57,6 +58,8 @@ MOCK_API = {
         {"name": "Moby Dick.epub", "isDirectory": False, "isEpub": True, "size": 612000},
         {"name": "notes.txt", "isDirectory": False, "isEpub": False, "size": 2048},
     ],
+    "/api/calendar": {"days": [2, 6, 15, 23]},
+    "/api/calendar/entry": {"exists": True, "message": "[ ] Review project plan\n[x] Send calendar update"},
     "/api/fonts": {"families": [
         {"name": "Bookerly", "sizes": [10, 12, 14], "files": [{"size": 120000}, {"size": 140000}]},
         {"name": "Literata", "sizes": [12], "files": [{"size": 160000}]},

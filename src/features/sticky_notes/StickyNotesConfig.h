@@ -15,12 +15,17 @@
 #endif
 
 namespace calendar_app {
-inline bool formatSleepImagePath(char* output, const size_t outputSize, const uint16_t year, const uint8_t month,
-                                 const uint8_t day, const char* suffix = "") {
-  if (!output || outputSize == 0 || !suffix) return false;
-  const int length = snprintf(output, outputSize, "/.crosspoint/calendar/%04u-%02u-%02u.bmp%s",
+inline bool formatSleepImagePathInRoot(char* output, const size_t outputSize, const char* root, const uint16_t year,
+                                       const uint8_t month, const uint8_t day, const char* suffix = "") {
+  if (!output || outputSize == 0 || !root || !suffix) return false;
+  const int length = snprintf(output, outputSize, "%s/%04u-%02u-%02u.bmp%s", root,
                               static_cast<unsigned>(year), static_cast<unsigned>(month),
                               static_cast<unsigned>(day), suffix);
   return length > 0 && static_cast<size_t>(length) < outputSize;
+}
+
+inline bool formatSleepImagePath(char* output, const size_t outputSize, const uint16_t year, const uint8_t month,
+                                 const uint8_t day, const char* suffix = "") {
+  return formatSleepImagePathInRoot(output, outputSize, "/.crosspoint/calendar", year, month, day, suffix);
 }
 }  // namespace calendar_app

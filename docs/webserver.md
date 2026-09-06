@@ -9,6 +9,7 @@ The web server is available while the device is in **File Transfer** or
 **Calibre Wireless** mode. It can:
 
 - Upload, download, rename, move, and delete files on the SD card
+- View and edit Xteink X3 Calendar entries
 - Create folders
 - Edit many device settings from a browser
 - Manage saved Wi-Fi networks and OPDS servers
@@ -77,7 +78,7 @@ OPDS server.
 
 ## Web Interface
 
-The browser UI has four primary pages.
+The browser UI has five primary pages.
 
 ### Home
 
@@ -117,6 +118,14 @@ Optimization changes the EPUB file contents before upload. Note: if you use
 hash-based KOReader sync, this will break the syncing because it changes the epub
 and therefore the hash. Use filename based syncing to ensure compatibility.
 If optimization fails, the uploader falls back to sending the original file.
+
+### Calendar
+
+The Calendar page is for Xteink X3. Select a date in the month grid, then use the editor below it to add or change up to 2 KB of text. Dates with saved entries have a dot. Entries can also be deleted from the editor.
+
+From the reader's Calendar view, select the **Browse** shortcut beside Back, choose a network mode, and open the displayed web address. Select **Calendar** in the browser. The browser saves directly to the same dated calendar store used by ESP-NOW sync.
+
+Web edits invalidate the date's previously rendered sleep image so the device never shows stale text. Open that date once in the device Calendar to render its updated sleep image.
 
 ### Settings
 

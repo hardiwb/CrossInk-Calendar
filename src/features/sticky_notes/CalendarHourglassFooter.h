@@ -10,6 +10,7 @@ namespace calendar_app {
 constexpr int HOURGLASS_BLOCK_HEIGHT = 20;
 constexpr int HOURGLASS_CORNER_RADIUS = 6;
 constexpr int HOURGLASS_BLOCK_MARGIN = 2;
+constexpr int HOURGLASS_GROUP_GAP = 8;
 constexpr int HOURGLASS_COLUMNS = 12;
 constexpr int HOURGLASS_ROWS = 2;
 constexpr int HOURGLASS_FOOTER_HEIGHT =

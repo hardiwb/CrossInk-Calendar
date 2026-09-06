@@ -48,6 +48,7 @@ class StickyNotesActivity final : public Activity {
   freeink::ui::GfxRendererTarget uiTarget_;
   UiApp app_;
   std::atomic<bool> uiReady_{false};
+  std::atomic<bool> calendarFrameReady_{false};
   ScreenTransitionRefresh screenTransitionRefresh_;
   State state_ = State::Ready;
   StrId errorId_ = StrId::STR_STICKY_NOTE_INVALID;
@@ -61,6 +62,8 @@ class StickyNotesActivity final : public Activity {
   bool radioUsed_ = false;
   bool returnToReader_ = false;
   bool receivedAny_ = false;
+  std::atomic<bool> sleepImageNeedsRefresh_{false};
+  bool leavingForWeb_ = false;
 
 #ifndef SIMULATOR
   HalEspNow radio_;
@@ -73,7 +76,20 @@ class StickyNotesActivity final : public Activity {
   uint32_t savedAtMs_ = 0;
   uint32_t lastAckMs_ = 0;
   uint32_t lastSavedSequence_ = 0;
+  uint8_t lastAckVersion_ = sticky_note::LEGACY_VERSION;
   std::array<uint8_t, 6> lastSavedSourceMac_{};
+  bool snapshotActive_ = false;
+  uint32_t snapshotSequence_ = 0;
+  uint32_t snapshotExpectedDigest_ = 0;
+  uint32_t snapshotDigestState_ = 0xffffffffU;
+  uint32_t snapshotLastDate_ = 0;
+  uint16_t snapshotExpectedEntries_ = 0;
+  uint16_t snapshotReceivedEntries_ = 0;
+  uint32_t lastCommittedSnapshotSequence_ = 0;
+  uint32_t lastCommittedSnapshotDigest_ = 0;
+  uint16_t lastCommittedSnapshotEntries_ = 0;
+  std::array<uint8_t, 6> snapshotSourceMac_{};
+  std::array<uint8_t, 6> lastCommittedSnapshotSourceMac_{};
 #endif
 
   static void menuScreen(UiApp::ScreenType& screen, void* user);
@@ -84,25 +100,28 @@ class StickyNotesActivity final : public Activity {
   bool loadCurrentLocalDate();
   void loadSelectedDate();
   void moveSelectedDay(int deltaDays);
+  void openWebCalendar();
   void startReceiving();
   void stopReceiving();
   void processPendingNote();
   void setState(State state);
   void setError(StrId errorId);
   void exitActivity();
-  void drawStatusScreen(const char* status, bool showReceiveAction);
-  void drawCalendarScreen();
+  void drawStatusScreen(const char* status, bool showWebAction);
+  void drawCalendarScreen(bool showListening = false);
   void drawNoteTemplate(bool showSavedStatus);
   void drawCalendarTemplate(const Rect& safeArea, const char* dateLine, EpdFontFamily::Style noteStyle,
                             bool showSavedStatus, bool reserveHourglassFooter);
   bool drawNoteCards(int left, int right, int top, int bottom, EpdFontFamily::Style noteStyle, bool compact);
-  bool saveNoteSleepImage();
+  bool saveNoteSleepImage(const char* root = "/.crosspoint/calendar");
   bool selectNoteSleepImage();
 
 #ifndef SIMULATOR
   static void onReceive(const uint8_t* sourceMac, const uint8_t* data, int length, void* context);
   void enqueueNote(const uint8_t* sourceMac, const uint8_t* data, int length);
-  bool sendAck(const uint8_t* peerMac, uint32_t sequence);
+  void resetSnapshotState();
+  void processSnapshotControl(const uint8_t* sourceMac, const sticky_note::SnapshotControl& control);
+  bool sendAck(const uint8_t* peerMac, uint32_t sequence, uint8_t version);
 #endif
 };
 

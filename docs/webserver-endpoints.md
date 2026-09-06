@@ -17,9 +17,21 @@ the IP address shown on the device screen.
 |--------|------|---------|
 | `GET` | `/` | Home/status page |
 | `GET` | `/files` | File manager page |
+| `GET` | `/calendar` | Xteink X3 Calendar editor |
 | `GET` | `/settings` | Web settings page |
 | `GET` | `/fonts` | SD-card font manager page |
 | `GET` | `/js/jszip.min.js` | JavaScript asset used by the file manager |
+
+## Calendar
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/calendar?year=2026&month=9` | List days with saved entries |
+| `GET` | `/api/calendar/entry?year=2026&month=9&day=6` | Read one dated entry |
+| `POST` | `/api/calendar/entry` | Save one dated entry from URL-encoded `year`, `month`, `day`, and `message` fields |
+| `POST` | `/api/calendar/entry/delete` | Delete one dated entry using URL-encoded date fields |
+
+Calendar years must be from 2024 through 2099. Entry text must be valid UTF-8 and from 1 to 2048 bytes.
 
 ## Device Status
 

@@ -2,16 +2,18 @@
 
 ### Added
 
+- X3 Calendar now has a local web editor with a clickable month view for viewing, adding, editing, and deleting dated entries without BS-Pro.
 - Sticky Notes receives up to 2 KB of dated checklist text using numbered ESP-NOW chunks, whole-message validation, and retry-safe acknowledgements. Existing 220-byte senders remain compatible.
 - Sticky Notes can render a calendar lock screen with the received date highlighted and the note rows listed below it.
 - Sticky Notes now retain every received date as an atomic SD-card calendar entry and mark stored dates on the calendar lock screen; sending the same date again replaces that day's entry.
 - Calendar lock screens can show a toggleable, borderless LCD-style 24-hour hourglass footer with two rows of rounded hour blocks and optional aligned refresh intervals from 30 minutes to 24 hours.
+- X3 Calendar can receive a validated full-calendar ESP-NOW snapshot, stage its dated notes and lock-screen images, and atomically replace the old calendar so source-side deletions are preserved.
 
 ### Changed
 
-- Sticky Notes is now presented as Calendar, uses the shorter Sync action, groups its settings under System > Calendar,
-  and has a dedicated Calendar sleep-screen option.
-- Calendar now opens offline on the X3's current local date, loads its retained entry, and starts note reception only when Sync is selected.
+- X3 Calendar now keeps the full month view visible while ESP-NOW listens in the background and places a compact Browse shortcut beside Back.
+- Sticky Notes is now presented as Calendar, groups its settings under System > Calendar, and has a dedicated Calendar sleep-screen option.
+- Calendar loads the X3's current local date and retained entry before entering the automatic receiver.
 - Larger sticky notes use tighter card spacing, with a More indicator when additional rows do not fit the single sleep screen.
 - The Calendar feature now shows an RTC requirement warning on Xteink X4 instead of starting note reception.
 
@@ -24,6 +26,7 @@
 - Sticky Notes no longer display the unfinished checklist marker `[ ]` in received note rows.
 - Sticky Notes loads its selected custom font before ESP-NOW starts and prepares note glyphs with lower memory
   overhead, avoiding an unintended fallback to the built-in font.
+- X3 Calendar clock updates can now wake and refresh while running from the battery instead of requiring USB power.
 
 ## [v1.5.0] - 2026-08-08
 

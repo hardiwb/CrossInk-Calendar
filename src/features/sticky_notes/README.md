@@ -12,10 +12,11 @@ settings, and update procedure is maintained in the
 The planned calendar application and optional half-hour lock-screen refresh are
 described in the [calendar blueprint](../../../docs/calendar-blueprint.md).
 
-Opening **Menu > Calendar** shows the offline Calendar on the X3's current
-local date. Left and Right select adjacent dates and load their retained entries.
-Select **Sync** to start Wi-Fi station mode and ESP-NOW on channel 1 for
-60 seconds. The normal deep-sleep path is unchanged and never listens for notes.
+Opening **Menu > Calendar** shows the full month view, immediately starts Wi-Fi
+station mode, and listens for ESP-NOW notes on channel 1 for 60 seconds. The short **Browse** shortcut
+beside Back opens the local web Calendar workflow. Left and Right select adjacent
+dates and load their retained entries; navigating ends the current listening window. The normal
+deep-sleep path is unchanged and never listens for notes.
 
 ## Sender protocol
 
@@ -27,6 +28,12 @@ Send unencrypted ESP-NOW on Wi-Fi channel 1. All multi-byte values are
 little-endian. The table below is the legacy v1 format for notes up to 220 bytes.
 Updated senders can transfer up to 2048 bytes using v2 numbered chunks; see the
 standalone guide above for the 24-byte header, CRC, and retry contract.
+Protocol v3 adds transactional full-calendar snapshots. The X3 stages all
+dated v1/v2 entries between a snapshot Begin and Commit, verifies their count
+and digest, then swaps the staged directory into place. An interrupted or
+invalid snapshot is discarded, so deleted dates disappear only after a valid
+commit and the previous calendar remains usable on failure. A sender update is
+required before BrokenSignal-Pro uses this receiver capability.
 
 | Offset | Bytes | Value |
 | ---: | ---: | --- |
