@@ -17,6 +17,7 @@ The main goal of this fork is to add a small productivity layer to CrossInk with
 
 <p align="center">
   <img src="./docs/images/StickynotesCrossinkcustomfont.jpeg" alt="Sticky Notes on CrossInk" width="300">
+  <img src="./docs/images/CalendarLoscreen.jpg" alt="Calendar lock screen on CrossInk" width="300">
 </p>
 
 - Added **Sticky Notes** support to Xteink X3/X4.
