@@ -5,6 +5,7 @@
 - Sticky Notes receives up to 2 KB of dated checklist text using numbered ESP-NOW chunks, whole-message validation, and retry-safe acknowledgements. Existing 220-byte senders remain compatible.
 - Sticky Notes can render a calendar lock screen with the received date highlighted and the note rows listed below it.
 - Sticky Notes now retain every received date as an atomic SD-card calendar entry and mark stored dates on the calendar lock screen; sending the same date again replaces that day's entry.
+- Calendar lock screens can show a toggleable, borderless LCD-style 24-hour hourglass footer with two rows of rounded hour blocks and optional aligned refresh intervals from 30 minutes to 24 hours.
 
 ### Changed
 

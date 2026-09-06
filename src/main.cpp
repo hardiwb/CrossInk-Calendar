@@ -94,6 +94,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "activities/settings/OtaUpdateActivity.h"
 #include "activities/settings/SdFirmwareUpdateActivity.h"
 #include "components/UITheme.h"
+#include "features/sticky_notes/CalendarHourglassFooter.h"
 #include "fontIds.h"
 #include "network/UsbSerialFileTransfer.h"
 #ifdef SIMULATOR
@@ -270,6 +271,10 @@ const char* wakeupRouteName(const HalGPIO::WakeupReason reason) {
   switch (reason) {
     case HalGPIO::WakeupReason::PowerButton:
       return "PowerButton";
+#ifndef SIMULATOR
+    case HalGPIO::WakeupReason::Timer:
+      return "Timer";
+#endif
     case HalGPIO::WakeupReason::AfterFlash:
       return "AfterFlash";
     case HalGPIO::WakeupReason::AfterUSBPower:
@@ -700,7 +705,15 @@ void enterDeepSleep(bool fromTimeout) {
   mirrorWakeShortPressToNvs();  // next boot's wake-hold check reads this pre-SD
   LOG_DBG("MAIN", "Entering deep sleep");
 
+  uint32_t calendarWakeSeconds = 0;
+#ifndef SIMULATOR
+  if (gpio.deviceIsX3()) {
+    calendar_app::calendarHourglassWakeDelay(calendarWakeSeconds);
+  }
+  powerManager.startDeepSleep(gpio, calendarWakeSeconds);
+#else
   powerManager.startDeepSleep(gpio);
+#endif
 }
 
 void setupDisplayAndFonts(const bool seamless = false, const bool loadReaderResources = true) {
@@ -847,6 +860,11 @@ void setup() {
       }
       break;
     }
+#ifndef SIMULATOR
+    case HalGPIO::WakeupReason::Timer:
+      LOG_INF("BOOT", "Calendar timer wake: loading minimal refresh state");
+      break;
+#endif
     case HalGPIO::WakeupReason::AfterUSBPower:
       // TEMP: continue booting while diagnosing post-flash/reset behavior.
       // Normal behavior is to go back to sleep when USB power causes a cold boot.
@@ -866,6 +884,14 @@ void setup() {
   // We need 6 open files concurrently when parsing a new chapter
   if (!Storage.begin()) {
     LOG_ERR("MAIN", "SD card initialization failed");
+#ifndef SIMULATOR
+    if (wakeupReason == HalGPIO::WakeupReason::Timer) {
+      LOG_ERR("BOOT", "Calendar timer refresh stopped because the SD card is unavailable");
+      putTiltSensorToSleepForDeepSleep();
+      powerManager.startDeepSleep(gpio);
+      return;
+    }
+#endif
     setupDisplayAndFonts(isSilentReboot, !isNetworkResume);
     activityManager.goToFullScreenMessage("SD card error", EpdFontFamily::BOLD);
     return;
@@ -876,6 +902,20 @@ void setup() {
 
   SETTINGS.loadFromFile();
   Storage.installDateTimeCallback(&SETTINGS.clockUtcOffsetQ);
+#ifndef SIMULATOR
+  if (wakeupReason == HalGPIO::WakeupReason::Timer) {
+    uint32_t nextWakeSeconds = 0;
+    const bool refreshed = gpio.deviceIsX3() &&
+                           calendar_app::refreshCalendarHourglassAfterTimerWake(renderer, display, nextWakeSeconds);
+    if (!refreshed) {
+      nextWakeSeconds = 0;
+      LOG_ERR("BOOT", "Calendar timer refresh stopped; returning to power-button-only sleep");
+    }
+    putTiltSensorToSleepForDeepSleep();
+    powerManager.startDeepSleep(gpio, nextWakeSeconds);
+    return;
+  }
+#endif
   APP_STATE.loadFromFile();
   I18N.setLanguage(static_cast<Language>(SETTINGS.language));
   if (!isNetworkResume) {

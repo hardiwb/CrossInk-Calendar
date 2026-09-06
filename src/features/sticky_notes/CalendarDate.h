@@ -20,17 +20,16 @@ inline uint8_t daysInMonth(const uint16_t year, const uint8_t month) {
 }
 }  // namespace detail
 
-inline bool currentLocalDate(uint16_t& year, uint8_t& month, uint8_t& day) {
+inline bool currentLocalDateTime(uint16_t& year, uint8_t& month, uint8_t& day, uint8_t& hour, uint8_t& minute,
+                                 uint8_t& second) {
   if (!halClock.isAvailable()) return false;
 
-  uint8_t hour = 0;
-  uint8_t minute = 0;
-  if (!halClock.getDateTime(year, month, day, hour, minute) || !sticky_note::validDate(year, month, day)) {
+  if (!halClock.getDateTime(year, month, day, hour, minute, second) || !sticky_note::validDate(year, month, day)) {
     return false;
   }
 
   const uint8_t offsetQ = std::min<uint8_t>(SETTINGS.clockUtcOffsetQ, 104);
-  const int localMinutes = static_cast<int>(hour) * 60 + minute + (static_cast<int>(offsetQ) - 48) * 15;
+  int localMinutes = static_cast<int>(hour) * 60 + minute + (static_cast<int>(offsetQ) - 48) * 15;
   if (localMinutes < 0) {
     if (day > 1) {
       --day;
@@ -42,6 +41,7 @@ inline bool currentLocalDate(uint16_t& year, uint8_t& month, uint8_t& day) {
       month = 12;
       day = 31;
     }
+    localMinutes += 24 * 60;
   } else if (localMinutes >= 24 * 60) {
     if (day < detail::daysInMonth(year, month)) {
       ++day;
@@ -53,7 +53,21 @@ inline bool currentLocalDate(uint16_t& year, uint8_t& month, uint8_t& day) {
       month = 1;
       day = 1;
     }
+    localMinutes -= 24 * 60;
   }
+  hour = static_cast<uint8_t>(localMinutes / 60);
+  minute = static_cast<uint8_t>(localMinutes % 60);
   return sticky_note::validDate(year, month, day);
+}
+
+inline bool currentLocalDateTime(uint16_t& year, uint8_t& month, uint8_t& day, uint8_t& hour, uint8_t& minute) {
+  uint8_t second = 0;
+  return currentLocalDateTime(year, month, day, hour, minute, second);
+}
+
+inline bool currentLocalDate(uint16_t& year, uint8_t& month, uint8_t& day) {
+  uint8_t hour = 0;
+  uint8_t minute = 0;
+  return currentLocalDateTime(year, month, day, hour, minute);
 }
 }  // namespace calendar_app

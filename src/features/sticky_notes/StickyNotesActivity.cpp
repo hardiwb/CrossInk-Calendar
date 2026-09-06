@@ -18,6 +18,7 @@
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "CalendarDate.h"
+#include "CalendarHourglassFooter.h"
 #include "MappedInputManager.h"
 #include "SdCardFontSystem.h"
 #include "SilentRestart.h"
@@ -549,7 +550,7 @@ void StickyNotesActivity::drawCalendarScreen() {
   formatNoteDate(note_, dateLine, sizeof(dateLine));
   const auto noteStyle = SETTINGS.stickyNoteBold ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
   prepareNoteGlyphCache(dateLine, noteStyle);
-  drawCalendarTemplate(safeArea, dateLine, noteStyle, false);
+  drawCalendarTemplate(safeArea, dateLine, noteStyle, false, false);
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_CALENDAR_SYNC), tr(STR_DIR_LEFT),
                                             tr(STR_DIR_RIGHT));
@@ -569,7 +570,7 @@ void StickyNotesActivity::drawNoteTemplate(const bool showSavedStatus) {
   prepareNoteGlyphCache(dateLine, noteStyle);
 
   if (SETTINGS.stickyNoteLayout == CrossPointSettings::STICKY_NOTE_CALENDAR) {
-    drawCalendarTemplate(safeArea, dateLine, noteStyle, showSavedStatus);
+    drawCalendarTemplate(safeArea, dateLine, noteStyle, showSavedStatus, SETTINGS.calendarHourglassFooter != 0);
     return;
   }
 
@@ -603,7 +604,7 @@ void StickyNotesActivity::drawNoteTemplate(const bool showSavedStatus) {
 
 void StickyNotesActivity::drawCalendarTemplate(const Rect& safeArea, const char* dateLine,
                                                const EpdFontFamily::Style noteStyle,
-                                               const bool showSavedStatus) {
+                                               const bool showSavedStatus, const bool reserveHourglassFooter) {
   const int sideInset = std::max(12, safeArea.width / 24);
   const int left = safeArea.x + sideInset;
   const int right = safeArea.x + safeArea.width - sideInset - 1;
@@ -672,7 +673,9 @@ void StickyNotesActivity::drawCalendarTemplate(const Rect& safeArea, const char*
   renderer.drawLine(left, ruleY, right, ruleY, 2, true);
 
   const bool largeNote = note_.messageLength > sticky_note::CHUNK_BYTES;
-  const int footerReserve = showSavedStatus || largeNote ? renderer.getLineHeight(SMALL_FONT_ID) + 20 : 0;
+  const int hourglassReserve = reserveHourglassFooter ? calendar_app::HOURGLASS_FOOTER_HEIGHT : 0;
+  const int footerReserve = (showSavedStatus || largeNote ? renderer.getLineHeight(SMALL_FONT_ID) + 20 : 0) +
+                            hourglassReserve;
   const int messageBottom = safeArea.y + safeArea.height - footerReserve;
   if (note_.messageLength == 0) {
     UITheme::drawCenteredText(renderer, safeArea, SMALL_FONT_ID, ruleY + 18, tr(STR_NO_ENTRIES));
@@ -681,11 +684,13 @@ void StickyNotesActivity::drawCalendarTemplate(const Rect& safeArea, const char*
   const bool truncated = drawNoteCards(left, right, ruleY + 14, messageBottom, noteStyle, true);
   if (largeNote && truncated) {
     UITheme::drawCenteredText(renderer, safeArea, SMALL_FONT_ID,
-                              safeArea.y + safeArea.height - renderer.getLineHeight(SMALL_FONT_ID) - 4,
+                              safeArea.y + safeArea.height - hourglassReserve - renderer.getLineHeight(SMALL_FONT_ID) -
+                                  4,
                               tr(STR_MORE));
   } else if (showSavedStatus) {
     UITheme::drawCenteredText(renderer, safeArea, SMALL_FONT_ID,
-                              safeArea.y + safeArea.height - renderer.getLineHeight(SMALL_FONT_ID) - 4,
+                              safeArea.y + safeArea.height - hourglassReserve - renderer.getLineHeight(SMALL_FONT_ID) -
+                                  4,
                               tr(STR_STICKY_NOTE_SAVED));
   }
 }

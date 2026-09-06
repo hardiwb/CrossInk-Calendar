@@ -466,7 +466,7 @@ inline SettingInfo buildSleepScreenSetting() {
 inline const std::vector<SettingInfo>& getBaseSettingsList() {
   static const std::vector<SettingInfo> baseList = [] {
     std::vector<SettingInfo> v;
-    v.reserve(72);
+    v.reserve(74);
     auto add = [&v](SettingInfo setting) { v.push_back(std::move(setting)); };
 
     // --- Display ---
@@ -817,6 +817,13 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
                             "moveFinishedToReadFolder", StrId::STR_CAT_SYSTEM));
     add(SettingInfo::Toggle(StrId::STR_AUTO_BACKUP_STATS, &CrossPointSettings::autoBackupStats, "autoBackupStats",
                             StrId::STR_CAT_SYSTEM));
+    add(SettingInfo::Toggle(StrId::STR_CALENDAR_HOURGLASS_FOOTER, &CrossPointSettings::calendarHourglassFooter,
+                            "calendarHourglassFooter", StrId::STR_CAT_SYSTEM));
+    add(SettingInfo::Enum(
+        StrId::STR_CALENDAR_CLOCK_REFRESH, &CrossPointSettings::calendarClockRefreshInterval,
+        {StrId::STR_NEVER, StrId::STR_EVERY_30_MINUTES, StrId::STR_EVERY_1_HOUR, StrId::STR_EVERY_3_HOURS,
+         StrId::STR_EVERY_6_HOURS, StrId::STR_EVERY_12_HOURS, StrId::STR_EVERY_24_HOURS},
+        "calendarClockRefreshInterval", StrId::STR_CAT_SYSTEM));
     // Persisted and available to the web settings API, but category-less because
     // the on-device editor lives under System > OPDS Servers.
     add(SettingInfo::String(StrId::STR_OPDS_DOWNLOAD_FOLDER, SETTINGS.opdsDownloadFolder,
@@ -1289,11 +1296,13 @@ inline std::vector<SettingInfo> buildSystemSettingsParentList(const std::vector<
 
 inline std::vector<SettingInfo> buildSystemCalendarSettingsList(const std::vector<SettingInfo>& allSettings) {
   std::vector<SettingInfo> settings;
-  settings.reserve(4);
+  settings.reserve(6);
   addSettingByName(settings, allSettings, StrId::STR_STICKY_NOTE_LAYOUT);
   addSettingByName(settings, allSettings, StrId::STR_STICKY_NOTE_FONT);
   addSettingByName(settings, allSettings, StrId::STR_STICKY_NOTE_FONT_SIZE);
   addSettingByName(settings, allSettings, StrId::STR_STICKY_NOTE_BOLD);
+  addSettingByName(settings, allSettings, StrId::STR_CALENDAR_HOURGLASS_FOOTER);
+  addSettingByName(settings, allSettings, StrId::STR_CALENDAR_CLOCK_REFRESH);
   return settings;
 }
 

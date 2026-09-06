@@ -45,6 +45,16 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     SLEEP_SCREEN_COVER_FILTER_COUNT
   };
   enum STICKY_NOTE_LAYOUT { STICKY_NOTE_CARDS = 0, STICKY_NOTE_CALENDAR = 1, STICKY_NOTE_LAYOUT_COUNT };
+  enum CALENDAR_CLOCK_REFRESH_INTERVAL {
+    CALENDAR_CLOCK_REFRESH_NEVER = 0,
+    CALENDAR_CLOCK_REFRESH_30_MINUTES,
+    CALENDAR_CLOCK_REFRESH_1_HOUR,
+    CALENDAR_CLOCK_REFRESH_3_HOURS,
+    CALENDAR_CLOCK_REFRESH_6_HOURS,
+    CALENDAR_CLOCK_REFRESH_12_HOURS,
+    CALENDAR_CLOCK_REFRESH_24_HOURS,
+    CALENDAR_CLOCK_REFRESH_INTERVAL_COUNT
+  };
 
   // Status bar enum - legacy
   enum STATUS_BAR_MODE {
@@ -459,6 +469,10 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t stickyNoteFontPointSize = 12;
   uint8_t stickyNoteBold = 1;
   uint8_t stickyNoteLayout = STICKY_NOTE_CARDS;
+  // Show the 24-hour hourglass footer on Calendar sleep screens.
+  uint8_t calendarHourglassFooter = 1;
+  // Timer-wake cadence for refreshing the Calendar hourglass while asleep.
+  uint8_t calendarClockRefreshInterval = CALENDAR_CLOCK_REFRESH_NEVER;
   // Show hidden files/directories (starting with '.') in the file browser (0 = hidden, 1 = show)
   uint8_t showHiddenFiles = 0;
   // Hide file extensions in the file browser right-side value column (0 = show, 1 = hide)

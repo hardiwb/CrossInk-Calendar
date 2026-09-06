@@ -32,6 +32,7 @@
 #include "components/themes/minimal/MinimalTheme.h"
 #include "fontIds.h"
 #include "features/sticky_notes/CalendarDate.h"
+#include "features/sticky_notes/CalendarHourglassFooter.h"
 #include "features/sticky_notes/StickyNotesConfig.h"
 #include "images/Logo120.h"
 #include "images/MoonIcon.h"
@@ -521,8 +522,10 @@ void SleepActivity::renderCalendarSleepScreen() const {
   uint16_t year = 0;
   uint8_t month = 0;
   uint8_t day = 0;
+  uint8_t hour = 0;
+  uint8_t minute = 0;
   char imagePath[64];
-  if (!calendar_app::currentLocalDate(year, month, day) ||
+  if (!calendar_app::currentLocalDateTime(year, month, day, hour, minute) ||
       !calendar_app::formatSleepImagePath(imagePath, sizeof(imagePath), year, month, day)) {
     LOG_ERR("SLP", "Could not resolve today's Calendar sleep image");
     return renderDefaultSleepScreen();
@@ -537,9 +540,17 @@ void SleepActivity::renderCalendarSleepScreen() const {
   Bitmap bitmap(file, true);
   if (bitmap.parseHeaders() != BmpReaderError::Ok) {
     LOG_ERR("SLP", "Calendar sleep image is invalid: %s", imagePath);
+    file.close();
     return renderDefaultSleepScreen();
   }
-  renderBitmapSleepScreen(bitmap);
+  const bool showHourglass = SETTINGS.calendarHourglassFooter != 0 &&
+                             SETTINGS.stickyNoteLayout == CrossPointSettings::STICKY_NOTE_CALENDAR;
+  renderBitmapSleepScreen(bitmap, showHourglass);
+  file.close();
+  if (showHourglass) {
+    calendar_app::drawHourglassFooter(renderer, hour, minute);
+    renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
+  }
 }
 
 void SleepActivity::renderCustomSleepScreen() const {
@@ -624,7 +635,7 @@ void SleepActivity::renderDefaultSleepScreen() const {
   renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
 }
 
-void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap) const {
+void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool deferRefresh) const {
   int x, y;
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
@@ -668,6 +679,8 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap) const {
   if (SETTINGS.sleepScreenCoverFilter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE) {
     renderer.invertScreen();
   }
+
+  if (deferRefresh) return;
 
   if (hasGreyscale) {
     // OEM grayscale pipeline base. Must stay HALF: the gray nudge LUT is

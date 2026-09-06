@@ -89,7 +89,7 @@ void HalPowerManager::setPowerSaving(bool enabled) {
   // Otherwise, no change needed
 }
 
-void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
+void HalPowerManager::startDeepSleep(HalGPIO& gpio, const uint32_t timerWakeSeconds) const {
   disableWiFiBeforeDeepSleep();
 
 #ifdef ENABLE_SERIAL_LOG
@@ -129,6 +129,12 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
   freeink::PowerManager::waitForPowerButtonRelease();
   esp_sleep_config_gpio_isolate();
   freeink::PowerManager::armPowerButtonWakeup();
+  if (timerWakeSeconds > 0) {
+    const esp_err_t result = esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(timerWakeSeconds) * 1000000ULL);
+    if (result != ESP_OK) {
+      LOG_ERR("PWR", "Failed to arm deep-sleep timer wake: %d", static_cast<int>(result));
+    }
+  }
   gpio_deep_sleep_hold_en();
   esp_deep_sleep_start();
 }
