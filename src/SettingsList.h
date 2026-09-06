@@ -303,7 +303,7 @@ inline SettingInfo buildStickyNoteFontFamilySetting(const SdCardFontRegistry* re
   s.nameId = StrId::STR_STICKY_NOTE_FONT;
   s.type = SettingType::ENUM;
   s.key = "stickyNoteFont";
-  s.category = StrId::STR_CAT_READER;
+  s.category = StrId::STR_CAT_SYSTEM;
   s.enumStringValues.push_back(I18N.get(StrId::STR_USE_DEFAULT_FONT));
 
   std::vector<std::string> familyNames;
@@ -349,7 +349,7 @@ inline SettingInfo buildStickyNoteFontSizeSetting(const SdCardFontRegistry* regi
   s.type = SettingType::ENUM;
   s.valuePtr = &CrossPointSettings::stickyNoteFontPointSize;
   s.key = "stickyNoteFontSize";
-  s.category = StrId::STR_CAT_READER;
+  s.category = StrId::STR_CAT_SYSTEM;
 
   if (!registry || SETTINGS.stickyNoteSdFontFamilyName[0] == '\0') {
     for (const uint8_t pointSize : {10, 12}) {
@@ -376,13 +376,13 @@ inline SettingInfo buildStickyNoteFontSizeSetting(const SdCardFontRegistry* regi
 
 inline SettingInfo buildStickyNoteBoldSetting() {
   return SettingInfo::Toggle(StrId::STR_STICKY_NOTE_BOLD, &CrossPointSettings::stickyNoteBold, "stickyNoteBold",
-                             StrId::STR_CAT_READER);
+                             StrId::STR_CAT_SYSTEM);
 }
 
 inline SettingInfo buildStickyNoteLayoutSetting() {
   return SettingInfo::Enum(StrId::STR_STICKY_NOTE_LAYOUT, &CrossPointSettings::stickyNoteLayout,
                            {StrId::STR_THEME_CLASSIC, StrId::STR_CALENDAR}, "stickyNoteLayout",
-                           StrId::STR_CAT_READER);
+                           StrId::STR_CAT_SYSTEM);
 }
 
 inline SettingInfo buildDictionarySetting(const DictionaryRegistry* dictRegistry) {
@@ -434,7 +434,8 @@ inline SettingInfo buildSleepScreenSetting() {
       StrId::STR_SLEEP_SCREEN, &CrossPointSettings::sleepScreen,
       {StrId::STR_NONE_OPT, StrId::STR_DARK, StrId::STR_LIGHT, StrId::STR_CUSTOM, StrId::STR_COVER,
        StrId::STR_COVER_CUSTOM, StrId::STR_PAGE_OVERLAY, StrId::STR_READING_STATS, StrId::STR_THEME_MINIMAL,
-       StrId::STR_THEME_MINIMAL_STATS, StrId::STR_THEME_DASHBOARD, StrId::STR_QUICK_RESUME},
+       StrId::STR_THEME_MINIMAL_STATS, StrId::STR_THEME_DASHBOARD, StrId::STR_QUICK_RESUME,
+       StrId::STR_CALENDAR},
       "sleepScreen", StrId::STR_CAT_DISPLAY);
   s.withEnumRawValues({
       static_cast<uint8_t>(CrossPointSettings::BLANK),
@@ -449,6 +450,7 @@ inline SettingInfo buildSleepScreenSetting() {
       static_cast<uint8_t>(CrossPointSettings::MINIMAL_STATS_SLEEP),
       static_cast<uint8_t>(CrossPointSettings::DASHBOARD_SLEEP),
       static_cast<uint8_t>(CrossPointSettings::QUICK_RESUME),
+      static_cast<uint8_t>(CrossPointSettings::CALENDAR_SLEEP),
   });
   return s;
 }
@@ -1057,10 +1059,6 @@ inline std::vector<SettingInfo> buildGroupedReaderSettingsList(const std::vector
   readerSettings.push_back(SettingInfo::SectionHeader(StrId::STR_READER_FONT_OPTIONS));
   addReaderSetting(StrId::STR_FONT_FAMILY);
   addReaderSetting(StrId::STR_FONT_SIZE);
-  addReaderSetting(StrId::STR_STICKY_NOTE_LAYOUT);
-  addReaderSetting(StrId::STR_STICKY_NOTE_FONT);
-  addReaderSetting(StrId::STR_STICKY_NOTE_FONT_SIZE);
-  addReaderSetting(StrId::STR_STICKY_NOTE_BOLD);
   addReaderSetting(StrId::STR_DICTIONARY_FONT);
   addReaderSetting(StrId::STR_DICTIONARY_FONT_SIZE);
   readerSettings.push_back(SettingInfo::Action(StrId::STR_MANAGE_FONTS, SettingAction::DownloadFonts));
@@ -1134,10 +1132,6 @@ inline std::vector<SettingInfo> buildReaderFontSettingsList(const std::vector<Se
   settings.reserve(12);
   addSettingByName(settings, allSettings, StrId::STR_FONT_FAMILY);
   addSettingByName(settings, allSettings, StrId::STR_FONT_SIZE);
-  addSettingByName(settings, allSettings, StrId::STR_STICKY_NOTE_LAYOUT);
-  addSettingByName(settings, allSettings, StrId::STR_STICKY_NOTE_FONT);
-  addSettingByName(settings, allSettings, StrId::STR_STICKY_NOTE_FONT_SIZE);
-  addSettingByName(settings, allSettings, StrId::STR_STICKY_NOTE_BOLD);
   addSettingByName(settings, allSettings, StrId::STR_DICTIONARY_FONT);
   addSettingByName(settings, allSettings, StrId::STR_DICTIONARY_FONT_SIZE);
   addSettingByName(settings, allSettings, StrId::STR_LINE_SPACING);
@@ -1278,7 +1272,10 @@ inline std::vector<SettingInfo> buildDisplaySleepSettingsList(const std::vector<
 
 inline std::vector<SettingInfo> buildSystemSettingsParentList(const std::vector<SettingInfo>& allSettings) {
   std::vector<SettingInfo> systemSettings;
-  systemSettings.reserve(8);
+  systemSettings.reserve(9);
+#if CROSSINK_ENABLE_STICKY_NOTES
+  systemSettings.push_back(SettingInfo::Submenu(StrId::STR_CALENDAR, SettingAction::SystemCalendar));
+#endif
   systemSettings.push_back(SettingInfo::Submenu(StrId::STR_SYSTEM_DEVICE, SettingAction::SystemDevice));
   systemSettings.push_back(SettingInfo::Submenu(StrId::STR_SYSTEM_FILES_CACHE, SettingAction::SystemFilesCache));
   systemSettings.push_back(SettingInfo::Submenu(StrId::STR_READING_STATS, SettingAction::SystemReadingStats));
@@ -1288,6 +1285,16 @@ inline std::vector<SettingInfo> buildSystemSettingsParentList(const std::vector<
   systemSettings.push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
   systemSettings.push_back(SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
   return systemSettings;
+}
+
+inline std::vector<SettingInfo> buildSystemCalendarSettingsList(const std::vector<SettingInfo>& allSettings) {
+  std::vector<SettingInfo> settings;
+  settings.reserve(4);
+  addSettingByName(settings, allSettings, StrId::STR_STICKY_NOTE_LAYOUT);
+  addSettingByName(settings, allSettings, StrId::STR_STICKY_NOTE_FONT);
+  addSettingByName(settings, allSettings, StrId::STR_STICKY_NOTE_FONT_SIZE);
+  addSettingByName(settings, allSettings, StrId::STR_STICKY_NOTE_BOLD);
+  return settings;
 }
 
 inline std::vector<SettingInfo> buildSystemDeviceSettingsList(const std::vector<SettingInfo>& allSettings) {

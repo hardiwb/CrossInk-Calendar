@@ -31,6 +31,8 @@
 #include "components/themes/dashboard/DashboardTheme.h"
 #include "components/themes/minimal/MinimalTheme.h"
 #include "fontIds.h"
+#include "features/sticky_notes/CalendarDate.h"
+#include "features/sticky_notes/StickyNotesConfig.h"
 #include "images/Logo120.h"
 #include "images/MoonIcon.h"
 
@@ -490,6 +492,8 @@ void SleepActivity::onEnter() {
       return renderBlankSleepScreen();
     case (CrossPointSettings::SLEEP_SCREEN_MODE::CUSTOM):
       return renderCustomSleepScreen();
+    case (CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR_SLEEP):
+      return renderCalendarSleepScreen();
     case (CrossPointSettings::SLEEP_SCREEN_MODE::COVER):
       return renderCoverSleepScreen();
     case (CrossPointSettings::SLEEP_SCREEN_MODE::COVER_CUSTOM):
@@ -511,6 +515,31 @@ void SleepActivity::onEnter() {
     default:
       return renderDefaultSleepScreen();
   }
+}
+
+void SleepActivity::renderCalendarSleepScreen() const {
+  uint16_t year = 0;
+  uint8_t month = 0;
+  uint8_t day = 0;
+  char imagePath[64];
+  if (!calendar_app::currentLocalDate(year, month, day) ||
+      !calendar_app::formatSleepImagePath(imagePath, sizeof(imagePath), year, month, day)) {
+    LOG_ERR("SLP", "Could not resolve today's Calendar sleep image");
+    return renderDefaultSleepScreen();
+  }
+
+  HalFile file;
+  if (!Storage.openFileForRead("SLP", imagePath, file)) {
+    LOG_INF("SLP", "Today's Calendar sleep image is missing: %s", imagePath);
+    return renderDefaultSleepScreen();
+  }
+
+  Bitmap bitmap(file, true);
+  if (bitmap.parseHeaders() != BmpReaderError::Ok) {
+    LOG_ERR("SLP", "Calendar sleep image is invalid: %s", imagePath);
+    return renderDefaultSleepScreen();
+  }
+  renderBitmapSleepScreen(bitmap);
 }
 
 void SleepActivity::renderCustomSleepScreen() const {

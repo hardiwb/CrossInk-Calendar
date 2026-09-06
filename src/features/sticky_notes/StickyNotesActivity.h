@@ -32,7 +32,9 @@ class StickyNotesActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
-  bool preventAutoSleep() override { return true; }
+  bool preventAutoSleep() override {
+    return state_ == State::Listening || state_ == State::Applying || state_ == State::Saved;
+  }
   bool skipLoopDelay() override { return state_ == State::Listening; }
 
  private:
@@ -40,9 +42,6 @@ class StickyNotesActivity final : public Activity {
 
   static constexpr uint8_t ESPNOW_CHANNEL = 1;
   static constexpr uint32_t RECEIVE_TIMEOUT_MS = 60000;
-  static constexpr const char* NOTE_PATH = "/.sleep/sticky-note.bmp";
-  static constexpr const char* NOTE_TEMP_PATH = "/.sleep/sticky-note.part.bmp";
-  static constexpr const char* NOTE_BACKUP_PATH = "/.sleep/sticky-note.bak.bmp";
   static constexpr freeink::ui::ActionId ACTION_RECEIVE = 1;
 
   using UiApp = freeink::ui::FreeInkApp<4, 4>;
@@ -80,6 +79,11 @@ class StickyNotesActivity final : public Activity {
   static void menuScreen(UiApp::ScreenType& screen, void* user);
   static void onRowEvent(const freeink::ui::ActionEvent& event, void* user);
   void buildMenuScreen(UiApp::ScreenType& screen);
+  void prepareNoteFont();
+  void prepareNoteGlyphCache(const char* dateLine, EpdFontFamily::Style noteStyle);
+  bool loadCurrentLocalDate();
+  void loadSelectedDate();
+  void moveSelectedDay(int deltaDays);
   void startReceiving();
   void stopReceiving();
   void processPendingNote();
@@ -87,6 +91,7 @@ class StickyNotesActivity final : public Activity {
   void setError(StrId errorId);
   void exitActivity();
   void drawStatusScreen(const char* status, bool showReceiveAction);
+  void drawCalendarScreen();
   void drawNoteTemplate(bool showSavedStatus);
   void drawCalendarTemplate(const Rect& safeArea, const char* dateLine, EpdFontFamily::Style noteStyle,
                             bool showSavedStatus);

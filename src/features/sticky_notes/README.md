@@ -1,4 +1,4 @@
-# Sticky Notes extension
+# Calendar extension
 
 This folder contains the optional, receive-only Sticky Notes extension. It is
 kept separate from the reader activities so a personal fork can carry or drop
@@ -12,10 +12,10 @@ settings, and update procedure is maintained in the
 The planned calendar application and optional half-hour lock-screen refresh are
 described in the [calendar blueprint](../../../docs/calendar-blueprint.md).
 
-Opening **Menu > Sticky Notes** immediately starts Wi-Fi station mode and
-ESP-NOW on channel 1 for 60 seconds. The normal deep-sleep path is unchanged and
-never listens for notes. If listening times out, select **Receive Note** to try
-again.
+Opening **Menu > Calendar** shows the offline Calendar on the X3's current
+local date. Left and Right select adjacent dates and load their retained entries.
+Select **Sync** to start Wi-Fi station mode and ESP-NOW on channel 1 for
+60 seconds. The normal deep-sleep path is unchanged and never listens for notes.
 
 ## Sender protocol
 
@@ -46,6 +46,8 @@ checklist rows; carriage returns and tabs are rendered as spaces. After a
 successful render and settings save, it sends a 16-byte acknowledgement to the
 source MAC using the same header:
 packet type `2` at offset 5 and the received sequence number at offset 8.
+Rows prefixed with `[ ] ` use a light-gray card; completed rows prefixed with
+`[x] ` render without the marker or gray background.
 
 The sender should transmit every 250-500 ms until it receives the matching
 acknowledgement or its own timeout expires. Increment the sequence number for
@@ -58,6 +60,11 @@ The activity holds one 2060-byte Note and small assembly metadata, replacing
 the previous pair of 232-byte Note members and avoiding full-message locals.
 The receiver repeats final ACKs for two seconds so packet loss does not force
 another render/save. Original v1 senders still work.
+Each dated entry also gets a dated 1-bit sleep image under
+`/.crosspoint/calendar/`. When sleeping, the X3 uses its current local RTC date
+to select that day's image, so batch order does not determine the displayed
+sleep-screen date. These images use about 48 KB per synced day (roughly 1.5 MB
+for a 31-day month) and require no second framebuffer.
 SD-card fonts use an optional 2090-byte prewarm scratch allocation for the
 activity lifetime, replacing a growing render-time string. Allocation failure
 falls back to the built-in font; no second framebuffer is allocated.
@@ -70,10 +77,13 @@ replaces that day's entry. Calendar layout marks every retained day in the
 displayed month; the selected day's rows remain subject to the available
 screen space.
 
-The generated 1-bit bitmap is installed atomically at
-`/.sleep/sticky-note.bmp`, selected as the favorite custom sleep image, and
-picked up by the firmware's existing sleep-screen scanner on the next sleep.
-Choose **Settings > Reader > Font Options > Sticky Notes Layout > Calendar**
+The generated dated 1-bit bitmaps are installed atomically under
+`/.crosspoint/calendar/`, selected through the Calendar sleep-screen mode, and
+picked up by the firmware's sleep path according to the current RTC date. Calendar can also be selected
+manually under **Settings > Display > Sleep Screen**; it falls back to the
+normal sleep screen until the first successful sync creates an image.
+Choose **Settings > System > Calendar > Calendar Layout > Calendar**
 to put a Monday-first month grid above the received note rows. The received
 date is highlighted with a light-gray rounded marker. The default Classic
-layout remains unchanged.
+layout remains unchanged. Font, font size, and bold content settings are in the
+same **System > Calendar** menu.

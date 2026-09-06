@@ -8,11 +8,18 @@
 
 ### Changed
 
+- Sticky Notes is now presented as Calendar, uses the shorter Sync action, groups its settings under System > Calendar,
+  and has a dedicated Calendar sleep-screen option.
+- Calendar now opens offline on the X3's current local date, loads its retained entry, and starts note reception only when Sync is selected.
 - Larger sticky notes use tighter card spacing, with a More indicator when additional rows do not fit the single sleep screen.
 - The Calendar feature now shows an RTC requirement warning on Xteink X4 instead of starting note reception.
 
 ### Fixed
 
+- Calendar month batches now store a dated 1-bit sleep image for each entry, allowing the X3 RTC to select the current
+  local date whenever the device sleeps instead of reusing the last received date.
+- Calendar date navigation now exits the completed batch-sync state and clears the stale sleep-screen confirmation.
+- Completed Calendar rows marked with `[x] ` now omit the marker and gray card background.
 - Sticky Notes no longer display the unfinished checklist marker `[ ]` in received note rows.
 - Sticky Notes loads its selected custom font before ESP-NOW starts and prepares note glyphs with lower memory
   overhead, avoiding an unintended fallback to the built-in font.

@@ -4,6 +4,7 @@
 
 #include <GfxRenderer.h>
 #include <FontCacheManager.h>
+#include <HalClock.h>
 #include <HalGPIO.h>
 #include <HalStorage.h>
 #include <I18n.h>
@@ -16,6 +17,7 @@
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "CalendarDate.h"
 #include "MappedInputManager.h"
 #include "SdCardFontSystem.h"
 #include "SilentRestart.h"
@@ -34,8 +36,14 @@ constexpr const char* WEEKDAY_NAMES[] = {"Sunday", "Monday", "Tuesday", "Wednesd
 constexpr const char* MONTH_NAMES[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
+bool noteRowHasMarker(const char* row, const char marker) {
+  return row && row[0] == '[' && row[1] == marker && row[2] == ']' && row[3] == ' ';
+}
+
+bool isCompletedNoteRow(const char* row) { return noteRowHasMarker(row, 'x'); }
+
 const char* noteRowText(const char* row) {
-  return row && row[0] == '[' && row[1] == ' ' && row[2] == ']' && row[3] == ' ' ? row + 4 : row;
+  return noteRowHasMarker(row, ' ') || isCompletedNoteRow(row) ? row + 4 : row;
 }
 
 constexpr bool isLeapYear(const uint16_t year) {
@@ -45,6 +53,37 @@ constexpr bool isLeapYear(const uint16_t year) {
 uint8_t daysInMonth(const uint16_t year, const uint8_t month) {
   static constexpr uint8_t DAYS[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
   return month == 2 && isLeapYear(year) ? 29 : DAYS[month - 1];
+}
+
+void adjustDateByDays(uint16_t& year, uint8_t& month, uint8_t& day, int deltaDays) {
+  while (deltaDays > 0) {
+    if (day < daysInMonth(year, month)) {
+      ++day;
+    } else {
+      day = 1;
+      if (month < 12)
+        ++month;
+      else {
+        month = 1;
+        ++year;
+      }
+    }
+    --deltaDays;
+  }
+  while (deltaDays < 0) {
+    if (day > 1) {
+      --day;
+    } else {
+      if (month > 1)
+        --month;
+      else {
+        month = 12;
+        --year;
+      }
+      day = daysInMonth(year, month);
+    }
+    ++deltaDays;
+  }
 }
 
 // Sakamoto's algorithm returns Sunday as zero. Convert it to a Monday-first index.
@@ -78,7 +117,7 @@ void formatNoteDate(const sticky_note::Note& note, char* output, const size_t ou
 
 StickyNotesActivity::StickyNotesActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                          const bool returnToReader)
-    : Activity("StickyNotes", renderer, mappedInput),
+    : Activity("Calendar", renderer, mappedInput),
       uiTarget_(makeUiTarget(renderer)),
       app_(uiTarget_, uiTarget_.deviceContext()),
       returnToReader_(returnToReader)
@@ -111,12 +150,18 @@ void StickyNotesActivity::onEnter() {
     return;
   }
 #endif
-  startReceiving();
+  prepareNoteFont();
+  if (!loadCurrentLocalDate()) {
+    state_ = State::Unsupported;
+  }
+  requestUpdate();
 }
 
 void StickyNotesActivity::onExit() {
   Activity::onExit();
   stopReceiving();
+  sdFontSystem.releaseLoadedFont(renderer);
+  sdFontSystem.releaseRegistry();
   noteGlyphs_.reset();
   if (radioUsed_) {
     if (returnToReader_)
@@ -131,6 +176,20 @@ void StickyNotesActivity::loop() {
   // Repeat the final acknowledgement briefly: a lost ACK must not cause a
   // second render/save, or make the sender report failure after a good save.
   if (state_ == State::Saved) {
+    if (mappedInput.wasPressed(MappedInputManager::Button::Left) ||
+        mappedInput.wasPressed(MappedInputManager::Button::PageBack)) {
+      stopReceiving();
+      state_ = State::Ready;
+      moveSelectedDay(-1);
+      return;
+    }
+    if (mappedInput.wasPressed(MappedInputManager::Button::Right) ||
+        mappedInput.wasPressed(MappedInputManager::Button::PageForward)) {
+      stopReceiving();
+      state_ = State::Ready;
+      moveSelectedDay(1);
+      return;
+    }
     const uint32_t now = millis();
     if (now - savedAtMs_ >= 2000) {
       // Keep the radio session alive for a Cardputer calendar batch. Do not
@@ -143,7 +202,7 @@ void StickyNotesActivity::loop() {
     }
     if (now - lastAckMs_ >= 350) {
       lastAckMs_ = now;
-      sendAck(assembly_.source(), note_.sequence);
+      sendAck(assembly_.source(), lastSavedSequence_);
     }
     return;
   }
@@ -160,6 +219,28 @@ void StickyNotesActivity::loop() {
       mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
     mappedInput.suppressNextConfirmRelease();
     startReceiving();
+    return;
+  }
+
+  if ((state_ == State::Ready || (state_ == State::Listening && receivedAny_)) &&
+      (mappedInput.wasPressed(MappedInputManager::Button::Left) ||
+       mappedInput.wasPressed(MappedInputManager::Button::PageBack))) {
+    if (state_ == State::Listening) {
+      stopReceiving();
+      state_ = State::Ready;
+    }
+    moveSelectedDay(-1);
+    return;
+  }
+
+  if ((state_ == State::Ready || (state_ == State::Listening && receivedAny_)) &&
+      (mappedInput.wasPressed(MappedInputManager::Button::Right) ||
+       mappedInput.wasPressed(MappedInputManager::Button::PageForward))) {
+    if (state_ == State::Listening) {
+      stopReceiving();
+      state_ = State::Ready;
+    }
+    moveSelectedDay(1);
     return;
   }
 
@@ -184,6 +265,12 @@ void StickyNotesActivity::loop() {
 }
 
 void StickyNotesActivity::render(RenderLock&&) {
+  if (state_ == State::Ready) {
+    drawCalendarScreen();
+    renderer.displayBuffer(screenTransitionRefresh_.modeFor(static_cast<uint8_t>(state_)));
+    return;
+  }
+
   if (state_ == State::Saved || state_ == State::Applying) {
     drawNoteTemplate(state_ == State::Saved);
     renderer.displayBuffer(screenTransitionRefresh_.modeFor(static_cast<uint8_t>(state_)));
@@ -221,7 +308,7 @@ void StickyNotesActivity::buildMenuScreen(UiApp::ScreenType& screen) {
                   0, static_cast<int16_t>(metrics.buttonHintsHeight + metrics.verticalSpacing), 0});
 
   fui::ListItem item;
-  item.label = tr(STR_RECEIVE_STICKY_NOTE);
+  item.label = tr(STR_CALENDAR_SYNC);
   item.actionValue = 0;
   fui::ListProps props;
   props.items = &item;
@@ -235,36 +322,96 @@ void StickyNotesActivity::buildMenuScreen(UiApp::ScreenType& screen) {
   screen.list(props);
 }
 
+void StickyNotesActivity::prepareNoteFont() {
+  sdFontSystem.releaseLoadedFont(renderer);
+  noteFontId_ = builtInNoteFontId(SETTINGS.stickyNoteFontPointSize);
+  if (SETTINGS.stickyNoteSdFontFamilyName[0] != '\0' && !noteGlyphs_) {
+    // This optional scratch area is too large for the C3 task stack. It is
+    // allocated once for the activity and released in onExit().
+    noteGlyphs_ = makeUniqueNoThrow<char[]>(NOTE_GLYPH_BYTES);
+    if (!noteGlyphs_) LOG_ERR(LOG_TAG, "Cannot allocate %u font scratch bytes; using built-in font",
+                            static_cast<unsigned>(NOTE_GLYPH_BYTES));
+  }
+  if (!noteGlyphs_ || SETTINGS.stickyNoteSdFontFamilyName[0] == '\0') return;
+
+  const auto activation = sdFontSystem.activateDictionaryFont(renderer, SETTINGS.stickyNoteSdFontFamilyName,
+                                                               SETTINGS.stickyNoteFontPointSize);
+  if (activation.usingDictionaryFont && activation.fontId != 0) {
+    noteFontId_ = activation.fontId;
+  } else {
+    LOG_ERR(LOG_TAG, "Failed to activate Sticky Notes font %s; using built-in font",
+            SETTINGS.stickyNoteSdFontFamilyName);
+    sdFontSystem.releaseLoadedFont(renderer);
+  }
+  sdFontSystem.releaseRegistry();
+}
+
+void StickyNotesActivity::prepareNoteGlyphCache(const char* dateLine, const EpdFontFamily::Style noteStyle) {
+  if (!renderer.isSdCardFont(noteFontId_)) return;
+  if (noteGlyphs_) snprintf(noteGlyphs_.get(), NOTE_GLYPH_BYTES, "%s\n%s", dateLine, note_.message.data());
+  auto* fontCache = renderer.getFontCacheManager();
+  const uint8_t styleMask = noteStyle == EpdFontFamily::BOLD ? 0x03 : 0x01;
+  if (!noteGlyphs_ || !fontCache ||
+      !fontCache->prewarmCache(noteFontId_, noteGlyphs_.get(), styleMask,
+                               FontCacheManager::PreparationPolicy::DictionaryLean)) {
+    LOG_ERR(LOG_TAG, "Failed to prepare Sticky Notes SD font; using built-in font");
+    noteFontId_ = builtInNoteFontId(SETTINGS.stickyNoteFontPointSize);
+  }
+}
+
+bool StickyNotesActivity::loadCurrentLocalDate() {
+  uint16_t year = 0;
+  uint8_t month = 0;
+  uint8_t day = 0;
+  if (!calendar_app::currentLocalDate(year, month, day)) {
+    LOG_ERR(LOG_TAG, "Could not read a valid RTC date");
+    return false;
+  }
+
+  note_.year = year;
+  note_.month = month;
+  note_.day = day;
+  loadSelectedDate();
+  return true;
+}
+
+void StickyNotesActivity::loadSelectedDate() {
+  const uint16_t year = note_.year;
+  const uint8_t month = note_.month;
+  const uint8_t day = note_.day;
+  note_.sequence = 0;
+  note_.messageLength = 0;
+  note_.message[0] = '\0';
+  if (sticky_note::Store::has(year, month, day) && !sticky_note::Store::load(year, month, day, note_)) {
+    LOG_ERR(LOG_TAG, "Could not load calendar entry %04u-%02u-%02u", static_cast<unsigned>(year),
+            static_cast<unsigned>(month), static_cast<unsigned>(day));
+    note_.messageLength = 0;
+    note_.message[0] = '\0';
+    note_.year = year;
+    note_.month = month;
+    note_.day = day;
+  }
+}
+
+void StickyNotesActivity::moveSelectedDay(const int deltaDays) {
+  uint16_t year = note_.year;
+  uint8_t month = note_.month;
+  uint8_t day = note_.day;
+  adjustDateByDays(year, month, day, deltaDays);
+  if (!sticky_note::validDate(year, month, day)) return;
+  note_.year = year;
+  note_.month = month;
+  note_.day = day;
+  loadSelectedDate();
+  requestUpdate();
+}
+
 void StickyNotesActivity::startReceiving() {
 #ifdef SIMULATOR
   setError(StrId::STR_STICKY_NOTE_SIMULATOR_UNAVAILABLE);
 #else
   stopReceiving();
-  sdFontSystem.releaseLoadedFont(renderer);
-  noteFontId_ = builtInNoteFontId(SETTINGS.stickyNoteFontPointSize);
-  if (SETTINGS.stickyNoteSdFontFamilyName[0] != '\0' && !noteGlyphs_) {
-    // Allocate after releasing the reader SD font and its glyph caches. This
-    // 2090-byte buffer is too large for the C3 task stack and may not fit while
-    // the previous font's cache is still resident.
-    noteGlyphs_ = makeUniqueNoThrow<char[]>(NOTE_GLYPH_BYTES);
-    if (!noteGlyphs_) LOG_ERR(LOG_TAG, "Cannot allocate %u font scratch bytes; using built-in font",
-                            static_cast<unsigned>(NOTE_GLYPH_BYTES));
-  }
-  if (noteGlyphs_ && SETTINGS.stickyNoteSdFontFamilyName[0] != '\0') {
-    // Load the selected font before ESP-NOW starts. Wi-Fi consumes internal
-    // heap, and deferring this swap until a note arrived could trip the
-    // dictionary-font headroom gate and silently leave the built-in font active.
-    const auto activation = sdFontSystem.activateDictionaryFont(renderer, SETTINGS.stickyNoteSdFontFamilyName,
-                                                                SETTINGS.stickyNoteFontPointSize);
-    if (activation.usingDictionaryFont && activation.fontId != 0) {
-      noteFontId_ = activation.fontId;
-    } else {
-      LOG_ERR(LOG_TAG, "Failed to activate Sticky Notes font %s; using built-in font",
-              SETTINGS.stickyNoteSdFontFamilyName);
-      sdFontSystem.releaseLoadedFont(renderer);
-    }
-    sdFontSystem.releaseRegistry();
-  }
+  prepareNoteFont();
   radioUsed_ = true;
   if (!pendingMutex_) {
     setError(StrId::STR_STICKY_NOTE_RADIO_FAILED);
@@ -320,17 +467,21 @@ void StickyNotesActivity::processPendingNote() {
     setError(StrId::STR_STICKY_NOTE_SAVE_FAILED);
     return;
   }
+
+  // Keep the tiny ACK identity independent from the Note buffer. The rendered
+  // bitmap is stored by its own date, so sleep can select today's file by RTC.
+  const uint32_t receivedSequence = note_.sequence;
+  lastSavedSequence_ = receivedSequence;
+  std::copy_n(assembly_.source(), lastSavedSourceMac_.size(), lastSavedSourceMac_.begin());
   setState(State::Applying);
   if (requestUpdateAndWait() != RequestUpdateResult::Rendered || !saveNoteSleepImage() || !selectNoteSleepImage()) {
     setError(StrId::STR_STICKY_NOTE_SAVE_FAILED);
     return;
   }
 
-  const bool ackQueued = sendAck(assembly_.source(), note_.sequence);
+  const bool ackQueued = sendAck(assembly_.source(), receivedSequence);
   if (!ackQueued) LOG_ERR(LOG_TAG, "Note saved but ACK could not be queued");
   receivedAny_ = true;
-  lastSavedSequence_ = note_.sequence;
-  std::copy_n(assembly_.source(), lastSavedSourceMac_.size(), lastSavedSourceMac_.begin());
   savedAtMs_ = lastAckMs_ = millis();
   state_ = State::Saved;
 #endif
@@ -360,9 +511,9 @@ void StickyNotesActivity::drawStatusScreen(const char* status, const bool showRe
   renderer.clearScreen();
   const Rect header = TouchHeaderBackButton::headerRect(renderer, mappedInput);
   if (mappedInput.hasTouchHardware()) {
-    TouchHeaderBackButton::draw(renderer, uiTarget_, header, tr(STR_STICKY_NOTES), false);
+    TouchHeaderBackButton::draw(renderer, uiTarget_, header, tr(STR_CALENDAR), false);
   } else {
-    GUI.drawHeader(renderer, header, tr(STR_STICKY_NOTES));
+    GUI.drawHeader(renderer, header, tr(STR_CALENDAR));
   }
 
   const Rect safeArea = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
@@ -381,6 +532,31 @@ void StickyNotesActivity::drawStatusScreen(const char* status, const bool showRe
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }
 
+void StickyNotesActivity::drawCalendarScreen() {
+  renderer.clearScreen();
+  const Rect header = TouchHeaderBackButton::headerRect(renderer, mappedInput);
+  if (mappedInput.hasTouchHardware()) {
+    TouchHeaderBackButton::draw(renderer, uiTarget_, header, tr(STR_CALENDAR), false);
+  } else {
+    GUI.drawHeader(renderer, header, tr(STR_CALENDAR));
+  }
+
+  Rect safeArea = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
+  const int contentTop = header.y + header.height + UITheme::getInstance().getMetrics().verticalSpacing;
+  safeArea.height -= contentTop - safeArea.y;
+  safeArea.y = contentTop;
+  char dateLine[40];
+  formatNoteDate(note_, dateLine, sizeof(dateLine));
+  const auto noteStyle = SETTINGS.stickyNoteBold ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+  prepareNoteGlyphCache(dateLine, noteStyle);
+  drawCalendarTemplate(safeArea, dateLine, noteStyle, false);
+
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_CALENDAR_SYNC), tr(STR_DIR_LEFT),
+                                            tr(STR_DIR_RIGHT));
+  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  uiReady_ = false;
+}
+
 void StickyNotesActivity::drawNoteTemplate(const bool showSavedStatus) {
   renderer.clearScreen();
   const Rect safeArea = UITheme::getInstance().getScreenSafeArea(renderer, false, false);
@@ -390,17 +566,7 @@ void StickyNotesActivity::drawNoteTemplate(const bool showSavedStatus) {
   char dateLine[40];
   formatNoteDate(note_, dateLine, sizeof(dateLine));
   const auto noteStyle = SETTINGS.stickyNoteBold ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
-  if (renderer.isSdCardFont(noteFontId_)) {
-    if (noteGlyphs_) snprintf(noteGlyphs_.get(), NOTE_GLYPH_BYTES, "%s\n%s", dateLine, note_.message.data());
-    auto* fontCache = renderer.getFontCacheManager();
-    const uint8_t styleMask = noteStyle == EpdFontFamily::BOLD ? 0x03 : 0x01;
-    if (!noteGlyphs_ || !fontCache ||
-        !fontCache->prewarmCache(noteFontId_, noteGlyphs_.get(), styleMask,
-                                 FontCacheManager::PreparationPolicy::DictionaryLean)) {
-      LOG_ERR(LOG_TAG, "Failed to prepare Sticky Notes SD font; using built-in font");
-      noteFontId_ = builtInNoteFontId(SETTINGS.stickyNoteFontPointSize);
-    }
-  }
+  prepareNoteGlyphCache(dateLine, noteStyle);
 
   if (SETTINGS.stickyNoteLayout == CrossPointSettings::STICKY_NOTE_CALENDAR) {
     drawCalendarTemplate(safeArea, dateLine, noteStyle, showSavedStatus);
@@ -508,6 +674,10 @@ void StickyNotesActivity::drawCalendarTemplate(const Rect& safeArea, const char*
   const bool largeNote = note_.messageLength > sticky_note::CHUNK_BYTES;
   const int footerReserve = showSavedStatus || largeNote ? renderer.getLineHeight(SMALL_FONT_ID) + 20 : 0;
   const int messageBottom = safeArea.y + safeArea.height - footerReserve;
+  if (note_.messageLength == 0) {
+    UITheme::drawCenteredText(renderer, safeArea, SMALL_FONT_ID, ruleY + 18, tr(STR_NO_ENTRIES));
+    return;
+  }
   const bool truncated = drawNoteCards(left, right, ruleY + 14, messageBottom, noteStyle, true);
   if (largeNote && truncated) {
     UITheme::drawCenteredText(renderer, safeArea, SMALL_FONT_ID,
@@ -538,9 +708,12 @@ bool StickyNotesActivity::drawNoteCards(const int left, const int right, const i
     char* newline = strchr(row, '\n');
     if (newline) *newline = '\0';
     const int remainingLines = std::max(1, (bottom - cardY - cardPaddingY * 2) / lineHeight);
+    const bool completed = isCompletedNoteRow(row);
     const auto lines = renderer.wrappedText(noteFontId_, noteRowText(row), textWidth, remainingLines, noteStyle);
     const int cardHeight = cardPaddingY * 2 + static_cast<int>(lines.size()) * lineHeight;
-    renderer.fillRoundedRect(cardLeft, cardY, cardWidth, cardHeight, cardRadius, Color::LightGray);
+    if (!completed) {
+      renderer.fillRoundedRect(cardLeft, cardY, cardWidth, cardHeight, cardRadius, Color::LightGray);
+    }
 
     int textY = cardY + cardPaddingY;
     for (const auto& line : lines) {
@@ -561,43 +734,45 @@ bool StickyNotesActivity::drawNoteCards(const int left, const int right, const i
 }
 
 bool StickyNotesActivity::saveNoteSleepImage() {
-  if (!Storage.exists("/.sleep") && !Storage.mkdir("/.sleep")) {
-    LOG_ERR(LOG_TAG, "Failed to create /.sleep");
+  constexpr size_t PATH_BYTES = 64;
+  char imagePath[PATH_BYTES];
+  char tempPath[PATH_BYTES];
+  char backupPath[PATH_BYTES];
+  if (!calendar_app::formatSleepImagePath(imagePath, sizeof(imagePath), note_.year, note_.month, note_.day) ||
+      !calendar_app::formatSleepImagePath(tempPath, sizeof(tempPath), note_.year, note_.month, note_.day, ".tmp") ||
+      !calendar_app::formatSleepImagePath(backupPath, sizeof(backupPath), note_.year, note_.month, note_.day,
+                                          ".bak")) {
+    LOG_ERR(LOG_TAG, "Failed to build dated Calendar sleep-image path");
     return false;
   }
-  if (Storage.exists(NOTE_TEMP_PATH)) Storage.remove(NOTE_TEMP_PATH);
-  if (!ScreenshotUtil::saveFramebufferAsBmp(NOTE_TEMP_PATH, renderer.getFrameBuffer(), renderer.getDisplayWidth(),
+  if (Storage.exists(tempPath)) Storage.remove(tempPath);
+  if (!ScreenshotUtil::saveFramebufferAsBmp(tempPath, renderer.getFrameBuffer(), renderer.getDisplayWidth(),
                                             renderer.getDisplayHeight())) {
     LOG_ERR(LOG_TAG, "Failed to write temporary note bitmap");
     return false;
   }
 
-  if (Storage.exists(NOTE_BACKUP_PATH)) Storage.remove(NOTE_BACKUP_PATH);
-  const bool hadExisting = Storage.exists(NOTE_PATH);
-  if (hadExisting && !Storage.rename(NOTE_PATH, NOTE_BACKUP_PATH)) {
-    Storage.remove(NOTE_TEMP_PATH);
+  if (Storage.exists(backupPath)) Storage.remove(backupPath);
+  const bool hadExisting = Storage.exists(imagePath);
+  if (hadExisting && !Storage.rename(imagePath, backupPath)) {
+    Storage.remove(tempPath);
     LOG_ERR(LOG_TAG, "Failed to back up current note bitmap");
     return false;
   }
-  if (!Storage.rename(NOTE_TEMP_PATH, NOTE_PATH)) {
-    if (hadExisting) Storage.rename(NOTE_BACKUP_PATH, NOTE_PATH);
-    Storage.remove(NOTE_TEMP_PATH);
+  if (!Storage.rename(tempPath, imagePath)) {
+    if (hadExisting) Storage.rename(backupPath, imagePath);
+    Storage.remove(tempPath);
     LOG_ERR(LOG_TAG, "Failed to install note bitmap");
     return false;
   }
-  if (hadExisting) Storage.remove(NOTE_BACKUP_PATH);
+  if (hadExisting) Storage.remove(backupPath);
   return true;
 }
 
 bool StickyNotesActivity::selectNoteSleepImage() {
-  APP_STATE.favoriteSleepImagePath = NOTE_PATH;
-  SETTINGS.sleepScreen = CrossPointSettings::SLEEP_SCREEN_MODE::CUSTOM;
-  if (!APP_STATE.saveToFile()) {
-    LOG_ERR(LOG_TAG, "Failed to pin note sleep image");
-    return false;
-  }
+  SETTINGS.sleepScreen = CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR_SLEEP;
   if (!SETTINGS.saveToFile()) {
-    LOG_ERR(LOG_TAG, "Failed to select custom sleep mode");
+    LOG_ERR(LOG_TAG, "Failed to select Calendar sleep mode");
     return false;
   }
   return true;

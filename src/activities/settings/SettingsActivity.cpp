@@ -258,6 +258,7 @@ void SettingsActivity::rebuildSettingsLists() {
   controlsFrontButtonSettings.clear();
   controlsSideButtonSettings.clear();
   systemSettings.clear();
+  systemCalendarSettings.clear();
   systemDeviceSettings.clear();
   systemFilesCacheSettings.clear();
   systemReadingStatsSettings.clear();
@@ -283,6 +284,7 @@ void SettingsActivity::rebuildSettingsLists() {
   readerFontSettings = buildReaderFontSettingsList(allSettings);
   readerPageLayoutSettings = buildReaderPageLayoutSettingsList(allSettings);
   systemSettings = buildSystemSettingsParentList(allSettings);
+  systemCalendarSettings = buildSystemCalendarSettingsList(allSettings);
   systemDeviceSettings = buildSystemDeviceSettingsList(allSettings);
   systemFilesCacheSettings = buildSystemFilesCacheSettingsList(allSettings);
   systemReadingStatsSettings = buildSystemReadingStatsSettingsList(allSettings);
@@ -359,6 +361,9 @@ void SettingsActivity::setCurrentSettingsForCategory() {
       break;
     case 3:
       switch (activeSubmenu) {
+        case SettingAction::SystemCalendar:
+          currentSettings = &systemCalendarSettings;
+          break;
         case SettingAction::SystemDevice:
           currentSettings = &systemDeviceSettings;
           break;
@@ -404,6 +409,8 @@ StrId SettingsActivity::activeSubmenuTitleId() const {
       return StrId::STR_SIDE_BUTTONS;
     case SettingAction::SystemDevice:
       return StrId::STR_SYSTEM_DEVICE;
+    case SettingAction::SystemCalendar:
+      return StrId::STR_CALENDAR;
     case SettingAction::SystemFilesCache:
       return StrId::STR_SYSTEM_FILES_CACHE;
     case SettingAction::SystemReadingStats:

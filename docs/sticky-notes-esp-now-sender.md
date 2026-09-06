@@ -34,6 +34,8 @@ Encode one checklist item per UTF-8 line:
 - Do not add `LF` or NUL after the final item.
 - Prefix an unfinished item with the exact four bytes `[ ] `.
 - Prefix a completed item with the exact four bytes `[x] ` (lowercase `x`).
+- The receiver hides both prefixes and renders completed items without the
+  light-gray card background.
 - Replace CR, LF, or tab inside an item's text with a normal space.
 - Do not include the date in the text; encode it in the packet header.
 

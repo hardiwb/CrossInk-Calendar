@@ -280,7 +280,7 @@ void appendHomeMenuItems(HomeMenuEntries& items, bool hasOpdsServers, bool hasRe
 
   items.push({tr(STR_FILE_TRANSFER), Transfer, HomeMenuAction::FileTransfer});
 #if CROSSINK_ENABLE_STICKY_NOTES
-  items.push({tr(STR_STICKY_NOTES), Transfer, HomeMenuAction::StickyNotes});
+  items.push({tr(STR_CALENDAR), Transfer, HomeMenuAction::StickyNotes});
 #endif
   items.push({tr(STR_SETTINGS_TITLE), Settings, HomeMenuAction::Settings});
 }
@@ -1965,9 +1965,9 @@ void HomeActivity::render(RenderLock&&) {
       MinimalTheme::setHomeButtonHintSelection(minimalHomeNavIndex);
 #if CROSSINK_ENABLE_STICKY_NOTES
       if (recentBooks.empty()) {
-        GUI.drawButtonHints(renderer, tr(STR_MENU), tr(STR_STICKY_NOTES), tr(STR_SETTINGS_SHORT), "");
+        GUI.drawButtonHints(renderer, tr(STR_MENU), tr(STR_CALENDAR), tr(STR_SETTINGS_SHORT), "");
       } else {
-        GUI.drawButtonHints(renderer, tr(STR_MENU), tr(STR_READ), tr(STR_STICKY_NOTES), tr(STR_SETTINGS_SHORT));
+        GUI.drawButtonHints(renderer, tr(STR_MENU), tr(STR_READ), tr(STR_CALENDAR), tr(STR_SETTINGS_SHORT));
       }
 #else
       if (recentBooks.empty()) {

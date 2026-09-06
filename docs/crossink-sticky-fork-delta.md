@@ -47,18 +47,21 @@ Changes made after the initial feature implementation:
 
 ## User-visible behavior
 
-CrossInk-Sticky adds a receive-only Sticky Notes application:
+CrossInk-Sticky adds a receive-only Calendar application:
 
-1. Opening Sticky Notes immediately starts ESP-NOW reception; there is no
-   second confirmation click.
-2. Reception uses unencrypted ESP-NOW on Wi-Fi channel 1 for 60 seconds.
+1. Opening Calendar shows the offline Calendar on the X3's current local
+   RTC date and loads the retained entry for the selected day. Left and Right
+   select adjacent dates.
+2. Selecting Sync starts unencrypted ESP-NOW reception on Wi-Fi channel
+   1 for 60 seconds.
 3. There is no persistent pairing. The sender retries until the matching ACK is
    received.
-4. The radio runs only while the application is open. The normal deep-sleep
+4. The radio runs only during explicit note reception. The normal deep-sleep
    path remains unchanged.
-5. A validated note is rendered to `/.sleep/sticky-note.bmp`, installed as the
-   selected custom sleep image, and discovered by CrossInk's existing sleep
-   image scanner.
+5. A validated note is rendered to a dated BMP under `/.crosspoint/calendar/`
+   and selects the dedicated Calendar sleep-screen mode. At sleep time, the X3
+   RTC chooses the BMP for the current local date. The mode is also available under
+   Settings > Display > Sleep Screen and falls back safely before the first sync.
 6. The validated source text is atomically upserted by date under
    `/.crosspoint/calendar/`. Calendar layout marks every stored date in the
    displayed month.
@@ -74,7 +77,7 @@ rounded light-gray card. The note text is never edited on the Xteink.
 
 ## Entry points and shortcuts
 
-Sticky Notes is integrated into these upstream interfaces:
+Calendar is integrated into these upstream interfaces:
 
 - Home menus, including Dashboard, Lyra, and Minimal variants.
 - Reader long-press menu.
@@ -237,7 +240,7 @@ After every upstream integration, verify on a physical Xteink X3:
 - Successful sync restores EPUB, TXT, and XTC when launched from a reader.
 - Reader long-press menu and power-button long-press both open Sticky Notes.
 - Normal power-off/deep sleep does not start ESP-NOW reception.
-- `/.sleep/sticky-note.bmp` is selected and displayed on the next sleep.
+- The dated Calendar BMP matching the X3's current local RTC date is displayed on the next sleep.
 
 Finally, update the baseline commit, verified build date, artifact hash, changed
 file table, and this checklist whenever the fork behavior changes.
