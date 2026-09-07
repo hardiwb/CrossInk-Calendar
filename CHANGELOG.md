@@ -11,14 +11,16 @@
 
 ### Changed
 
-- X3 Calendar now keeps the full month view visible while ESP-NOW listens in the background and places a compact Browse shortcut beside Back.
+- X3 Calendar now keeps the full month view visible while ESP-NOW listens in the background and places a compact Sync shortcut beside Back for opening File Transfer.
 - Sticky Notes is now presented as Calendar, groups its settings under System > Calendar, and has a dedicated Calendar sleep-screen option.
 - Calendar loads the X3's current local date and retained entry before entering the automatic receiver.
+- Calendar opens directly in ESP-NOW receiver mode and identifies that it is ready in the screen header.
 - Larger sticky notes use tighter card spacing, with a More indicator when additional rows do not fit the single sleep screen.
 - The Calendar feature now shows an RTC requirement warning on Xteink X4 instead of starting note reception.
 
 ### Fixed
 
+- Calendar lock screens regenerated after web edits no longer include the interactive header clock, battery, or button hints.
 - Calendar month batches now store a dated 1-bit sleep image for each entry, allowing the X3 RTC to select the current
   local date whenever the device sleeps instead of reusing the last received date.
 - Calendar date navigation now exits the completed batch-sync state and clears the stale sleep-screen confirmation.

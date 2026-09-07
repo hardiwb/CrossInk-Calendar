@@ -218,9 +218,11 @@ void StickyNotesActivity::loop() {
   if ((state_ == State::Ready || state_ == State::Listening) && sleepImageNeedsRefresh_ &&
       calendarFrameReady_.exchange(false)) {
     sleepImageNeedsRefresh_ = false;
+    drawNoteTemplate(false);
     if (!saveNoteSleepImage() || !selectNoteSleepImage()) {
       LOG_ERR(LOG_TAG, "Could not refresh web-edited Calendar sleep image");
     }
+    requestUpdate();
   }
 
   if (TouchHeaderBackButton::wasTapped(mappedInput, renderer) ||
@@ -290,10 +292,10 @@ void StickyNotesActivity::render(RenderLock&&) {
   }
 
   if (state_ == State::Error && sleepImageNeedsRefresh_.exchange(false)) {
-    // Web edits remove the old bitmap. Rebuild it from the dated entry in the
-    // current framebuffer, then replace the buffer with the error screen
-    // before anything is sent to the e-ink panel.
-    drawCalendarScreen();
+    // Web edits remove the old bitmap. Rebuild the clean lock-screen template,
+    // then replace the buffer with the error screen before anything is sent to
+    // the e-ink panel.
+    drawNoteTemplate(false);
     if (!saveNoteSleepImage() || !selectNoteSleepImage()) {
       LOG_ERR(LOG_TAG, "Could not refresh web-edited Calendar sleep image");
     }
@@ -328,7 +330,7 @@ void StickyNotesActivity::buildMenuScreen(UiApp::ScreenType& screen) {
                   0, static_cast<int16_t>(metrics.buttonHintsHeight + metrics.verticalSpacing), 0});
 
   fui::ListItem item;
-  item.label = tr(STR_BROWSE);
+  item.label = tr(STR_CALENDAR_SYNC);
   item.actionValue = 0;
   fui::ListProps props;
   props.items = &item;
@@ -608,7 +610,7 @@ void StickyNotesActivity::drawStatusScreen(const char* status, const bool showWe
   uiReady_ = false;
   if (showWebAction) app_.render();
   uiReady_ = showWebAction;
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), showWebAction ? tr(STR_BROWSE) : "", "", "");
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), showWebAction ? tr(STR_CALENDAR_SYNC) : "", "", "");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }
 
@@ -617,7 +619,7 @@ void StickyNotesActivity::drawCalendarScreen(const bool showListening) {
   const Rect header = TouchHeaderBackButton::headerRect(renderer, mappedInput);
   char title[96];
   if (showListening) {
-    snprintf(title, sizeof(title), "%s - %s", tr(STR_CALENDAR), tr(STR_CALENDAR_SYNC));
+    snprintf(title, sizeof(title), "%s - %s", tr(STR_CALENDAR), tr(STR_CALENDAR_ESPNOW_SYNC_READY));
   } else {
     snprintf(title, sizeof(title), "%s", tr(STR_CALENDAR));
   }
@@ -637,7 +639,7 @@ void StickyNotesActivity::drawCalendarScreen(const bool showListening) {
   prepareNoteGlyphCache(dateLine, noteStyle);
   drawCalendarTemplate(safeArea, dateLine, noteStyle, false, false);
 
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_BROWSE), tr(STR_DIR_LEFT),
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_CALENDAR_SYNC), tr(STR_DIR_LEFT),
                                             tr(STR_DIR_RIGHT));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   uiReady_ = false;
