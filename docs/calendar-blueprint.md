@@ -48,6 +48,33 @@ protocol and dated note files remain the compatibility foundation.
    X3 calendar until the complete snapshot validates, then replace it. An empty
    snapshot intentionally clears the calendar.
 
+## Notion agenda import
+
+The Calendar page in the device web portal can import an agenda from Notion
+while the device is connected to an existing Wi-Fi network. This is an explicit
+foreground action; the firmware does not wake or connect in the background.
+
+1. Create a Notion internal integration and copy its token.
+2. Share the agenda database with that integration.
+3. Ensure the database has at least one title property and one date property.
+4. In the web portal, open Calendar, enter the token and database URL or ID,
+   and save the connection.
+
+After saving the connection once, choose **File Transfer > Notion Calendar** on
+the device and select a Wi-Fi network. The firmware restarts into its minimal
+network boot, downloads the agenda directly from Notion, and shows a dedicated
+sync result screen. It does not start the file-transfer web server, leaving that
+heap available for the ESP32-C3 TLS handshake.
+
+The first title and date properties are detected automatically. Rows on the
+same date become separate lines in that day's entry, and a date-time value is
+prefixed with its `HH:MM` time. A successful import atomically replaces the
+local calendar; if discovery, download, parsing, or storage fails, the previous
+calendar remains intact. The integration is read-only: it only retrieves the
+database schema and queries rows, and never creates, edits, archives, or deletes
+Notion content. The API token is device-bound obfuscated on the SD
+card and is never returned by the web API.
+
 ## Twenty-four-segment hourglass clock
 
 The bottom of the Calendar lock screen may include a compact day-progress

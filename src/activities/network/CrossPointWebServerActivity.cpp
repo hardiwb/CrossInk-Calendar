@@ -20,6 +20,8 @@
 #include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "features/sticky_notes/NotionCalendarConfig.h"
+#include "features/sticky_notes/NotionCalendarSync.h"
 #include "util/QrUtils.h"
 
 namespace {
@@ -141,15 +143,26 @@ void CrossPointWebServerActivity::onExit() {
 }
 
 void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) {
-  const char* modeName = "Join Network";
-  if (mode == NetworkMode::CONNECT_CALIBRE) {
-    modeName = "Connect to Calibre";
-  } else if (mode == NetworkMode::CREATE_HOTSPOT) {
-    modeName = "Create Hotspot";
-  } else if (mode == NetworkMode::NEARBY_STATS_SYNC) {
-    modeName = "Sync Stats";
-  } else if (mode == NetworkMode::NEARBY_BOOK_RECEIVE) {
-    modeName = "Receive File";
+  const char* modeName = "Unknown";
+  switch (mode) {
+    case NetworkMode::JOIN_NETWORK:
+      modeName = "Join Network";
+      break;
+    case NetworkMode::CONNECT_CALIBRE:
+      modeName = "Connect to Calibre";
+      break;
+    case NetworkMode::CREATE_HOTSPOT:
+      modeName = "Create Hotspot";
+      break;
+    case NetworkMode::NOTION_CALENDAR:
+      modeName = "Notion Calendar";
+      break;
+    case NetworkMode::NEARBY_BOOK_RECEIVE:
+      modeName = "Receive File";
+      break;
+    case NetworkMode::NEARBY_STATS_SYNC:
+      modeName = "Sync Stats";
+      break;
   }
   LOG_DBG("WEBACT", "Network mode selected: %s", modeName);
 
@@ -175,6 +188,9 @@ void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) 
         break;
       case NetworkMode::CREATE_HOTSPOT:
         activityManager.goToHotspotFileTransfer(returnBookPath);
+        break;
+      case NetworkMode::NOTION_CALENDAR:
+        activityManager.goToNotionCalendarSync(returnBookPath);
         break;
       case NetworkMode::NEARBY_STATS_SYNC:
       case NetworkMode::NEARBY_BOOK_RECEIVE:
@@ -213,7 +229,7 @@ void CrossPointWebServerActivity::onNetworkModeSelected(const NetworkMode mode) 
     return;
   }
 
-  if (mode == NetworkMode::JOIN_NETWORK) {
+  if (mode == NetworkMode::JOIN_NETWORK || mode == NetworkMode::NOTION_CALENDAR) {
     // STA mode - launch WiFi selection
     WiFi.mode(WIFI_STA);
 
@@ -240,12 +256,21 @@ void CrossPointWebServerActivity::onWifiSelectionComplete(const bool connected) 
     // Get connection info before exiting subactivity
     isApMode = false;
 
+    if (networkMode == NetworkMode::NOTION_CALENDAR) {
+      startNotionSync();
+      return;
+    }
+
     // Start mDNS for hostname resolution
     restartMdns(AP_HOSTNAME, "WEBACT");
 
     // Start the web server
     startWebServer();
   } else {
+    if (networkBootReady) {
+      exitToOrigin();
+      return;
+    }
     // User cancelled - go back to mode selection
     state = WebServerActivityState::MODE_SELECTION;
 
@@ -353,9 +378,19 @@ void CrossPointWebServerActivity::stopWebServer() {
 }
 
 void CrossPointWebServerActivity::loop() {
-  if ((state == WebServerActivityState::SERVER_RUNNING || state == WebServerActivityState::AP_STARTING) &&
+  if ((state == WebServerActivityState::SERVER_RUNNING || state == WebServerActivityState::AP_STARTING ||
+       state == WebServerActivityState::NOTION_SYNCING || state == WebServerActivityState::NOTION_RESULT) &&
       exitRequested()) {
     exitToOrigin();
+    return;
+  }
+
+  if (state == WebServerActivityState::NOTION_SYNCING) {
+    if (notionSyncScreenRendered) performNotionSync();
+    return;
+  }
+  if (state == WebServerActivityState::NOTION_RESULT) {
+    if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) exitToOrigin();
     return;
   }
 
@@ -447,12 +482,15 @@ void CrossPointWebServerActivity::loop() {
 void CrossPointWebServerActivity::render(RenderLock&&) {
   // Only render our own UI when server is running
   // Subactivities handle their own rendering
-  if (state == WebServerActivityState::SERVER_RUNNING || state == WebServerActivityState::AP_STARTING) {
+  if (state == WebServerActivityState::SERVER_RUNNING || state == WebServerActivityState::AP_STARTING ||
+      state == WebServerActivityState::NOTION_SYNCING || state == WebServerActivityState::NOTION_RESULT) {
     renderer.clearScreen();
     const auto pageHeight = renderer.getScreenHeight();
 
     if (state == WebServerActivityState::SERVER_RUNNING) {
       renderServerRunning();
+    } else if (state == WebServerActivityState::NOTION_SYNCING || state == WebServerActivityState::NOTION_RESULT) {
+      renderNotionSync();
     } else {
       renderHeader();
       const auto height = renderer.getLineHeight(UI_10_FONT_ID);
@@ -461,6 +499,55 @@ void CrossPointWebServerActivity::render(RenderLock&&) {
     }
     renderer.displayBuffer(screenTransitionRefresh.modeFor(static_cast<uint8_t>(state)));
   }
+}
+
+void CrossPointWebServerActivity::startNotionSync() {
+  stopWebServer();
+  notionSyncScreenRendered = false;
+  notionSyncDisplay = NotionSyncDisplay::NONE;
+  if (!NOTION_CALENDAR_CONFIG.loadFromFile() || !NOTION_CALENDAR_CONFIG.isConfigured()) {
+    notionSyncDisplay = NotionSyncDisplay::NOT_CONFIGURED;
+    state = WebServerActivityState::NOTION_RESULT;
+  } else {
+    state = WebServerActivityState::NOTION_SYNCING;
+  }
+  requestUpdate();
+}
+
+void CrossPointWebServerActivity::performNotionSync() {
+  notionSyncScreenRendered = false;
+  const calendar_app::NotionSyncResult result =
+      calendar_app::syncFromNotion(NOTION_CALENDAR_CONFIG.token(), NOTION_CALENDAR_CONFIG.databaseId());
+  notionSyncDisplay = result.success ? NotionSyncDisplay::SUCCESS : NotionSyncDisplay::FAILED;
+  if (!result.success) {
+    LOG_ERR("WEBACT", "Notion Calendar sync failed: %s", result.message.c_str());
+  } else {
+    LOG_INF("WEBACT", "Notion Calendar synced: entries=%u days=%u", static_cast<unsigned>(result.importedEntries),
+            static_cast<unsigned>(result.importedDays));
+  }
+  state = WebServerActivityState::NOTION_RESULT;
+  requestUpdate();
+}
+
+void CrossPointWebServerActivity::renderNotionSync() {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int centerY = renderer.getScreenHeight() / 2;
+  CompactHeader::drawTitle(renderer, tr(STR_NOTION_CALENDAR));
+  if (state == WebServerActivityState::NOTION_SYNCING) {
+    renderer.drawCenteredText(UI_12_FONT_ID, centerY, tr(STR_NOTION_CALENDAR_SYNCING), true,
+                              EpdFontFamily::BOLD);
+    notionSyncScreenRendered = true;
+  } else if (notionSyncDisplay == NotionSyncDisplay::SUCCESS) {
+    renderer.drawCenteredText(UI_12_FONT_ID, centerY, tr(STR_NOTION_CALENDAR_SYNCED), true, EpdFontFamily::BOLD);
+  } else if (notionSyncDisplay == NotionSyncDisplay::NOT_CONFIGURED) {
+    renderer.drawCenteredText(UI_10_FONT_ID, centerY, tr(STR_NOTION_CALENDAR_NOT_CONFIGURED), true);
+  } else {
+    renderer.drawCenteredText(UI_12_FONT_ID, centerY - metrics.verticalSpacing, tr(STR_SYNC_FAILED_MSG), true,
+                              EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_10_FONT_ID, centerY + metrics.verticalSpacing * 2, tr(STR_CHECK_SERIAL_OUTPUT));
+  }
+  const auto labels = mappedInput.mapLabels(tr(STR_EXIT), tr(STR_EXIT), "", "");
+  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }
 
 void CrossPointWebServerActivity::renderHeader() const {

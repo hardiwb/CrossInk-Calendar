@@ -5,6 +5,7 @@
 #include <esp_netif.h>
 #include <esp_netif_sntp.h>
 #include <lwip/dns.h>
+#include <sys/time.h>
 #include <time.h>
 
 #include <cassert>
@@ -36,6 +37,19 @@ bool isValidDate(const uint16_t year, const uint8_t month, const uint8_t day) {
   if (year < kBaseYear || year > 2099) return false;
   const uint8_t monthDays = daysInMonth(year, month);
   return monthDays > 0 && day >= 1 && day <= monthDays;
+}
+
+int64_t unixSeconds(const uint16_t year, const uint8_t month, const uint8_t day, const uint8_t hour,
+                    const uint8_t minute, const uint8_t second) {
+  int64_t days = 0;
+  for (uint16_t currentYear = 1970; currentYear < year; ++currentYear) {
+    days += isLeapYear(currentYear) ? 366 : 365;
+  }
+  for (uint8_t currentMonth = 1; currentMonth < month; ++currentMonth) {
+    days += daysInMonth(year, currentMonth);
+  }
+  days += day - 1;
+  return days * 86400 + static_cast<int64_t>(hour) * 3600 + static_cast<int64_t>(minute) * 60 + second;
 }
 
 void adjustDateByDays(uint16_t& year, uint8_t& month, uint8_t& day, const int dayDelta) {
@@ -284,6 +298,29 @@ bool HalClock::syncFromNTP() {
 
   LOG_INF("CLK", "RTC set to %04d-%02d-%02d %02d:%02d:%02d UTC", year, month, day, timeinfo.tm_hour, timeinfo.tm_min,
           timeinfo.tm_sec);
+  return true;
+}
+
+bool HalClock::syncSystemTimeFromRTC() {
+  uint16_t year = 0;
+  uint8_t month = 0;
+  uint8_t day = 0;
+  uint8_t hour = 0;
+  uint8_t minute = 0;
+  uint8_t second = 0;
+  if (!getDate(year, month, day, hour, minute, second) || hour >= 24 || minute >= 60 || second >= 60) {
+    LOG_ERR("CLK", "RTC date/time unavailable for system clock");
+    return false;
+  }
+
+  timeval systemTime = {};
+  systemTime.tv_sec = static_cast<time_t>(unixSeconds(year, month, day, hour, minute, second));
+  if (settimeofday(&systemTime, nullptr) != 0) {
+    LOG_ERR("CLK", "Failed to set system clock from RTC");
+    return false;
+  }
+  LOG_INF("CLK", "System clock set from RTC: %04u-%02u-%02u %02u:%02u:%02u UTC", year, month, day, hour,
+          minute, second);
   return true;
 }
 

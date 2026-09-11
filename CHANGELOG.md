@@ -2,6 +2,7 @@
 
 ### Added
 
+- Calendar can now import a Notion agenda using a saved integration token and database URL or ID, with a dedicated File Transfer > Notion Calendar flow that atomically replaces only the device's local calendar.
 - X3 Calendar now has a local web editor with a clickable month view for viewing, adding, editing, and deleting dated entries without BS-Pro.
 - Sticky Notes receives up to 2 KB of dated checklist text using numbered ESP-NOW chunks, whole-message validation, and retry-safe acknowledgements. Existing 220-byte senders remain compatible.
 - Sticky Notes can render a calendar lock screen with the received date highlighted and the note rows listed below it.
@@ -20,6 +21,9 @@
 
 ### Fixed
 
+- Calendar sleep screens now render the current RTC date with an empty agenda when today has no entry, including after an hourglass timer wake.
+- Notion Calendar schema discovery no longer fails before connecting when preparing its bodyless GET request.
+- Notion Calendar sync now initializes the ESP32 system clock from the X3 RTC before certificate validation, falls back to NTP, and reports the underlying connection error.
 - Calendar lock screens regenerated after web edits no longer include the interactive header clock, battery, or button hints.
 - Calendar month batches now store a dated 1-bit sleep image for each entry, allowing the X3 RTC to select the current
   local date whenever the device sleeps instead of reusing the last received date.

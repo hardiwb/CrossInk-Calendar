@@ -5,6 +5,7 @@ let viewYear = today.getFullYear();
 let viewMonth = today.getMonth() + 1;
 let selectedDay = today.getDate();
 let entryDays = new Set();
+let notionHasToken = false;
 
 function queryDate(day) {
   return 'year=' + viewYear + '&month=' + viewMonth + '&day=' + day;
@@ -14,6 +15,75 @@ function showMessage(text, error) {
   const element = document.getElementById('message');
   element.textContent = text;
   element.className = 'message ' + (error ? 'error' : 'success');
+}
+
+function showNotionMessage(text, error) {
+  const element = document.getElementById('notion-message');
+  element.textContent = text;
+  element.className = 'message ' + (error ? 'error' : 'success');
+}
+
+function setNotionBusy(busy) {
+  document.getElementById('notion-save').disabled = busy;
+  document.getElementById('notion-disconnect').disabled = busy || !notionHasToken;
+}
+
+async function loadNotionConfig() {
+  try {
+    const response = await fetch('/api/calendar/notion');
+    if (!response.ok) throw new Error('Could not load the Notion connection.');
+    const data = await response.json();
+    notionHasToken = !!data.hasToken;
+    document.getElementById('notion-database').value = data.databaseId || '';
+    document.getElementById('notion-token').placeholder = notionHasToken ? '(token saved; leave blank to keep it)' : 'ntn_... or secret_...';
+    document.getElementById('notion-state').textContent = notionHasToken ? 'Connected' : 'Not configured';
+    setNotionBusy(false);
+  } catch (error) {
+    document.getElementById('notion-state').textContent = 'Unavailable';
+    showNotionMessage(error.message, true);
+  }
+}
+
+async function saveNotionConfig() {
+  const database = document.getElementById('notion-database').value.trim();
+  const token = document.getElementById('notion-token').value.trim();
+  if (!database || (!token && !notionHasToken)) {
+    showNotionMessage('Enter an integration token and database URL or ID.', true);
+    return;
+  }
+  setNotionBusy(true);
+  try {
+    const response = await fetch('/api/calendar/notion', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({database: database, token: token})
+    });
+    if (!response.ok) throw new Error(await response.text() || 'Could not save the Notion connection.');
+    document.getElementById('notion-token').value = '';
+    notionHasToken = true;
+    await loadNotionConfig();
+    showNotionMessage('Notion connection saved.', false);
+  } catch (error) {
+    showNotionMessage(error.message, true);
+  }
+  setNotionBusy(false);
+}
+
+async function disconnectNotion() {
+  if (!confirm('Remove the saved Notion token and database ID? Existing calendar entries will remain.')) return;
+  setNotionBusy(true);
+  try {
+    const response = await fetch('/api/calendar/notion/delete', {method: 'POST'});
+    if (!response.ok) throw new Error(await response.text() || 'Could not remove the Notion connection.');
+    notionHasToken = false;
+    document.getElementById('notion-token').value = '';
+    document.getElementById('notion-database').value = '';
+    await loadNotionConfig();
+    showNotionMessage('Notion connection removed.', false);
+  } catch (error) {
+    showNotionMessage(error.message, true);
+  }
+  setNotionBusy(false);
 }
 
 function setEditorEnabled(enabled) {
@@ -148,3 +218,4 @@ async function deleteEntry() {
 
 document.getElementById('entry-message').addEventListener('input', updateCount);
 loadMonth();
+loadNotionConfig();

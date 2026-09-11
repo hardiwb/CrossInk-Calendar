@@ -10,6 +10,30 @@
   <div id="calendar-grid" class="calendar-grid" aria-label="Month"></div>
 </div>
 
+<div class="notion-card">
+  <div class="editor-heading">
+    <div>
+      <span class="eyebrow">Calendar source</span>
+      <h2>Notion Agenda</h2>
+    </div>
+    <span id="notion-state" class="entry-state">Loading...</span>
+  </div>
+  <p class="notion-help">Use an internal integration token and a shared Notion database containing a title column and a date column. After saving, choose <strong>File Transfer &gt; Notion Calendar</strong> on the device to replace its local calendar.</p>
+  <label class="notion-field">
+    <span>Integration token</span>
+    <input id="notion-token" type="password" autocomplete="off" placeholder="ntn_... or secret_...">
+  </label>
+  <label class="notion-field">
+    <span>Database URL or ID</span>
+    <input id="notion-database" type="text" autocomplete="off" placeholder="https://www.notion.so/... or database ID">
+  </label>
+  <div class="notion-actions">
+    <button id="notion-disconnect" class="danger-button" type="button" onclick="disconnectNotion()" disabled>Disconnect</button>
+    <button id="notion-save" class="secondary-button" type="button" onclick="saveNotionConfig()">Save connection</button>
+  </div>
+  <p id="notion-message" class="message" role="status"></p>
+</div>
+
 <div class="editor-card">
   <div class="editor-heading">
     <div>

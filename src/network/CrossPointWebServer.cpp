@@ -30,6 +30,8 @@
 #include "WebDAVHandler.h"
 #include "WifiCredentialStore.h"
 #include "features/sticky_notes/StickyNotesStore.h"
+#include "features/sticky_notes/NotionCalendarConfig.h"
+#include "features/sticky_notes/NotionCalendarSync.h"
 #include "html/CalendarPageHtml.generated.h"
 #include "html/FilesPageHtml.generated.h"
 #include "html/FontsPageHtml.generated.h"
@@ -365,6 +367,10 @@ void CrossPointWebServer::begin() {
   server->on("/api/calendar/entry", HTTP_GET, [this] { handleCalendarEntry(); });
   server->on("/api/calendar/entry", HTTP_POST, [this] { handleCalendarEntrySave(); });
   server->on("/api/calendar/entry/delete", HTTP_POST, [this] { handleCalendarEntryDelete(); });
+  server->on("/api/calendar/notion", HTTP_GET, [this] { handleGetNotionCalendarConfig(); });
+  server->on("/api/calendar/notion", HTTP_POST, [this] { handlePostNotionCalendarConfig(); });
+  server->on("/api/calendar/notion/delete", HTTP_POST, [this] { handleDeleteNotionCalendarConfig(); });
+  server->on("/api/calendar/notion/sync", HTTP_POST, [this] { handleNotionCalendarSync(); });
 
   // Settings endpoints
   server->on("/settings", HTTP_GET, [this] { handleSettingsPage(); });
@@ -797,6 +803,84 @@ void CrossPointWebServer::handleCalendarEntryDelete() {
     return;
   }
   server->send(200, "application/json", "{\"deleted\":true}");
+#else
+  server->send(404, "text/plain", "Calendar is disabled");
+#endif
+}
+
+void CrossPointWebServer::handleGetNotionCalendarConfig() {
+#if CROSSINK_ENABLE_STICKY_NOTES
+  NOTION_CALENDAR_CONFIG.loadFromFile();
+  JsonDocument doc;
+  doc["databaseId"] = NOTION_CALENDAR_CONFIG.databaseId();
+  doc["hasToken"] = NOTION_CALENDAR_CONFIG.hasToken();
+  String body;
+  serializeJson(doc, body);
+  server->send(200, "application/json", body);
+#else
+  server->send(404, "text/plain", "Calendar is disabled");
+#endif
+}
+
+void CrossPointWebServer::handlePostNotionCalendarConfig() {
+#if CROSSINK_ENABLE_STICKY_NOTES
+  if (!server->hasArg("plain")) {
+    server->send(400, "text/plain", "Missing JSON body");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server->arg("plain"))) {
+    server->send(400, "text/plain", "Invalid JSON");
+    return;
+  }
+  const std::string databaseInput = doc["database"] | "";
+  const std::string token = doc["token"] | "";
+  NOTION_CALENDAR_CONFIG.loadFromFile();
+  const bool preserveToken = token.empty() && NOTION_CALENDAR_CONFIG.hasToken();
+  if (!NOTION_CALENDAR_CONFIG.set(token, databaseInput, preserveToken)) {
+    server->send(400, "text/plain", "Enter a valid Notion token and database URL or ID");
+    return;
+  }
+  server->send(200, "application/json", "{\"saved\":true}");
+#else
+  server->send(404, "text/plain", "Calendar is disabled");
+#endif
+}
+
+void CrossPointWebServer::handleDeleteNotionCalendarConfig() {
+#if CROSSINK_ENABLE_STICKY_NOTES
+  if (!NOTION_CALENDAR_CONFIG.clear()) {
+    server->send(500, "text/plain", "Could not remove the Notion connection");
+    return;
+  }
+  server->send(200, "application/json", "{\"deleted\":true}");
+#else
+  server->send(404, "text/plain", "Calendar is disabled");
+#endif
+}
+
+void CrossPointWebServer::handleNotionCalendarSync() {
+#if CROSSINK_ENABLE_STICKY_NOTES
+  if (WiFi.status() != WL_CONNECTED || apMode) {
+    server->send(409, "text/plain", "Connect the device to a Wi-Fi network before syncing Notion");
+    return;
+  }
+  if (!NOTION_CALENDAR_CONFIG.loadFromFile() || !NOTION_CALENDAR_CONFIG.isConfigured()) {
+    server->send(400, "text/plain", "Save the Notion connection first");
+    return;
+  }
+
+  const calendar_app::NotionSyncResult result =
+      calendar_app::syncFromNotion(NOTION_CALENDAR_CONFIG.token(), NOTION_CALENDAR_CONFIG.databaseId());
+  JsonDocument doc;
+  doc["success"] = result.success;
+  doc["message"] = result.message;
+  doc["entries"] = result.importedEntries;
+  doc["days"] = result.importedDays;
+  doc["truncatedDays"] = result.truncatedDays;
+  String body;
+  serializeJson(doc, body);
+  server->send(result.success ? 200 : 502, "application/json", body);
 #else
   server->send(404, "text/plain", "Calendar is disabled");
 #endif

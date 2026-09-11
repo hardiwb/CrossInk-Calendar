@@ -80,6 +80,10 @@ class HalClock {
   // Sync the ESP32 system clock without requiring an external RTC.
   bool syncSystemTimeFromNTP();
 
+  // Copy the external RTC's UTC date/time into the ESP32 system clock. This
+  // allows certificate validation when NTP is unavailable.
+  bool syncSystemTimeFromRTC();
+
  private:
   bool getDate(uint16_t& year, uint8_t& month, uint8_t& day, uint8_t& hour, uint8_t& minute, uint8_t& second) const;
   bool writeDateTimeToRTC(uint16_t year, uint8_t month, uint8_t day, uint8_t weekday, uint8_t hour, uint8_t minute,

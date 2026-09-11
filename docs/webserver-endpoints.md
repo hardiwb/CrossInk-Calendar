@@ -30,8 +30,15 @@ the IP address shown on the device screen.
 | `GET` | `/api/calendar/entry?year=2026&month=9&day=6` | Read one dated entry |
 | `POST` | `/api/calendar/entry` | Save one dated entry from URL-encoded `year`, `month`, `day`, and `message` fields |
 | `POST` | `/api/calendar/entry/delete` | Delete one dated entry using URL-encoded date fields |
+| `GET` | `/api/calendar/notion` | Return the database ID and whether a Notion token is saved |
+| `POST` | `/api/calendar/notion` | Save JSON `database` and `token` fields; omit an already-saved token to preserve it |
+| `POST` | `/api/calendar/notion/delete` | Remove the saved Notion token and database ID |
+| `POST` | `/api/calendar/notion/sync` | Replace the local calendar from the configured Notion agenda |
 
 Calendar years must be from 2024 through 2099. Entry text must be valid UTF-8 and from 1 to 2048 bytes.
+Notion sync is available only in station mode because the device needs internet
+access. The token is never returned by the API. A sync failure leaves the live
+calendar unchanged.
 
 ## Device Status
 

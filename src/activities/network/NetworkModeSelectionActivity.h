@@ -10,13 +10,21 @@
 #include "activities/ScreenTransitionRefresh.h"
 #include "util/ButtonNavigator.h"
 
-enum class NetworkMode { JOIN_NETWORK, CONNECT_CALIBRE, CREATE_HOTSPOT, NEARBY_BOOK_RECEIVE, NEARBY_STATS_SYNC };
+enum class NetworkMode {
+  JOIN_NETWORK,
+  CONNECT_CALIBRE,
+  CREATE_HOTSPOT,
+  NOTION_CALENDAR,
+  NEARBY_BOOK_RECEIVE,
+  NEARBY_STATS_SYNC
+};
 
 /**
  * NetworkModeSelectionActivity presents the user with a choice:
  * - "Join a Network" - Connect to an existing WiFi network (STA mode)
  * - "Connect to Calibre" - Use Calibre wireless device transfers
  * - "Create Hotspot" - Create an Access Point that others can connect to (AP mode)
+ * - "Notion Calendar" - Replace the local calendar from a Notion agenda
  * - "Sync Stats" - Sync reading stats directly with a nearby reader
  * - "Receive File" - Receive a file directly from another reader
  *

@@ -16,8 +16,12 @@ enum class WebServerActivityState {
   WIFI_SELECTION,  // WiFi selection subactivity is active (for Join Network mode)
   AP_STARTING,     // Starting Access Point mode
   SERVER_RUNNING,  // Web server is running and handling requests
+  NOTION_SYNCING,  // Foreground Notion Calendar import after the web server stops
+  NOTION_RESULT,   // Showing the foreground Notion Calendar import result
   SHUTTING_DOWN    // Shutting down server and WiFi
 };
+
+enum class NotionSyncDisplay { NONE, SUCCESS, FAILED, NOT_CONFIGURED };
 
 /**
  * CrossPointWebServerActivity is the entry point for file transfer functionality.
@@ -58,10 +62,13 @@ class CrossPointWebServerActivity final : public Activity {
   // Cached signal-strength bracket (0..4) for the WiFi indicator.
   int lastWifiBars = 0;
   ScreenTransitionRefresh screenTransitionRefresh;
+  NotionSyncDisplay notionSyncDisplay = NotionSyncDisplay::NONE;
+  bool notionSyncScreenRendered = false;
 
   void renderServerRunning() const;
   void renderHeader() const;
   void renderWifiIndicator(int subHeaderTop) const;
+  void renderNotionSync();
   bool exitRequested() const;
 
   void onNetworkModeSelected(NetworkMode mode);
@@ -69,6 +76,8 @@ class CrossPointWebServerActivity final : public Activity {
   void startAccessPoint();
   void startWebServer();
   void stopWebServer();
+  void startNotionSync();
+  void performNotionSync();
   void exitToOrigin();
 
  public:
@@ -87,5 +96,7 @@ class CrossPointWebServerActivity final : public Activity {
   void loop() override;
   void render(RenderLock&&) override;
   bool skipLoopDelay() override { return webServer && webServer->isRunning(); }
-  bool preventAutoSleep() override { return webServer && webServer->isRunning(); }
+  bool preventAutoSleep() override {
+    return state == WebServerActivityState::NOTION_SYNCING || (webServer && webServer->isRunning());
+  }
 };

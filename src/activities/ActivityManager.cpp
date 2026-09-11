@@ -46,6 +46,20 @@ uint32_t fileTransferBootPayload(const NetworkMode mode, const bool returnToRead
 void restartToFileTransfer(const NetworkMode mode, const std::string& returnBookPath) {
   silentRestartToNetwork(NetworkBootTarget::FILE_TRANSFER, fileTransferBootPayload(mode, !returnBookPath.empty()));
 }
+
+bool isFileTransferBootMode(const NetworkMode mode) {
+  switch (mode) {
+    case NetworkMode::JOIN_NETWORK:
+    case NetworkMode::CONNECT_CALIBRE:
+    case NetworkMode::CREATE_HOTSPOT:
+    case NetworkMode::NOTION_CALENDAR:
+      return true;
+    case NetworkMode::NEARBY_BOOK_RECEIVE:
+    case NetworkMode::NEARBY_STATS_SYNC:
+      return false;
+  }
+  return false;
+}
 }  // namespace
 
 void ActivityManager::begin(const uint32_t renderTaskStackBytes) {
@@ -314,9 +328,14 @@ void ActivityManager::goToHotspotFileTransfer(const std::string& returnBookPath)
   restartToFileTransfer(NetworkMode::CREATE_HOTSPOT, returnBookPath);
 }
 
+void ActivityManager::goToNotionCalendarSync(const std::string& returnBookPath) {
+  restartToFileTransfer(NetworkMode::NOTION_CALENDAR, returnBookPath);
+}
+
 bool ActivityManager::resumeFileTransferFromNetworkBoot(const uint32_t payload) {
   const uint32_t rawMode = payload & FILE_TRANSFER_MODE_MASK;
-  if (rawMode > static_cast<uint32_t>(NetworkMode::CREATE_HOTSPOT)) {
+  const auto mode = static_cast<NetworkMode>(rawMode);
+  if (!isFileTransferBootMode(mode)) {
     LOG_ERR("ACT", "Invalid file transfer network boot mode: %lu", static_cast<unsigned long>(rawMode));
     return false;
   }
@@ -330,10 +349,10 @@ bool ActivityManager::resumeFileTransferFromNetworkBoot(const uint32_t payload) 
     }
   }
 
-  // The activity must outlive this boot function, so allocate its small control object on the heap; web buffers
-  // remain owned and released by the activity lifecycle.
+  // The activity must outlive this boot function, so allocate its small control object on the heap; any mode-specific
+  // network buffers remain owned and released by the activity lifecycle.
   auto activity = makeUniqueNoThrow<CrossPointWebServerActivity>(
-      renderer, mappedInput, static_cast<NetworkMode>(rawMode), std::move(returnBookPath), true);
+      renderer, mappedInput, mode, std::move(returnBookPath), true);
   if (!activity) {
     LOG_ERR("ACT", "OOM: file transfer after minimal boot (free=%u maxAlloc=%u)", ESP.getFreeHeap(),
             ESP.getMaxAllocHeap());

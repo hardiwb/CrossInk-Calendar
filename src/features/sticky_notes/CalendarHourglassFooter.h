@@ -17,6 +17,8 @@ constexpr int HOURGLASS_FOOTER_HEIGHT =
     HOURGLASS_ROWS * (HOURGLASS_BLOCK_HEIGHT + HOURGLASS_BLOCK_MARGIN * 2);
 
 void drawHourglassFooter(const GfxRenderer& renderer, uint8_t hour, uint8_t minute);
+void drawEmptyCalendarScreen(const GfxRenderer& renderer, uint16_t year, uint8_t month, uint8_t day,
+                             bool reserveHourglassFooter);
 bool calendarHourglassWakeDelay(uint32_t& wakeSeconds);
 bool refreshCalendarHourglassAfterTimerWake(GfxRenderer& renderer, HalDisplay& display, uint32_t& nextWakeSeconds);
 

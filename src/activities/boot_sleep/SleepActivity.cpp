@@ -538,9 +538,23 @@ void SleepActivity::renderCalendarSleepScreen() const {
     return renderDefaultSleepScreen();
   }
 
+  const bool calendarLayout = SETTINGS.stickyNoteLayout == CrossPointSettings::STICKY_NOTE_CALENDAR;
+  const bool showHourglass = SETTINGS.calendarHourglassFooter != 0 && calendarLayout;
+
   HalFile file;
   if (!Storage.openFileForRead("SLP", imagePath, file)) {
     LOG_INF("SLP", "Today's Calendar sleep image is missing: %s", imagePath);
+#if CROSSINK_ENABLE_STICKY_NOTES
+    if (calendarLayout && !sticky_note::Store::has(year, month, day)) {
+      calendar_app::drawEmptyCalendarScreen(renderer, year, month, day, showHourglass);
+      if (SETTINGS.sleepScreenCoverFilter == CrossPointSettings::INVERTED_BLACK_AND_WHITE) {
+        renderer.invertScreen();
+      }
+      if (showHourglass) calendar_app::drawHourglassFooter(renderer, hour, minute);
+      renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
+      return;
+    }
+#endif
     return renderDefaultSleepScreen();
   }
 
@@ -550,8 +564,6 @@ void SleepActivity::renderCalendarSleepScreen() const {
     file.close();
     return renderDefaultSleepScreen();
   }
-  const bool showHourglass = SETTINGS.calendarHourglassFooter != 0 &&
-                             SETTINGS.stickyNoteLayout == CrossPointSettings::STICKY_NOTE_CALENDAR;
   renderBitmapSleepScreen(bitmap, showHourglass);
   file.close();
   if (showHourglass) {

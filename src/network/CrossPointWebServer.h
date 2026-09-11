@@ -117,6 +117,10 @@ class CrossPointWebServer {
   void handleCalendarEntry();
   void handleCalendarEntrySave();
   void handleCalendarEntryDelete();
+  void handleGetNotionCalendarConfig();
+  void handlePostNotionCalendarConfig();
+  void handleDeleteNotionCalendarConfig();
+  void handleNotionCalendarSync();
 
   // Settings handlers
   void handleSettingsPage() const;
