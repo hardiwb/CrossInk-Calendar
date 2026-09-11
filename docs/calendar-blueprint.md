@@ -9,6 +9,9 @@ This document tracks the planned evolution of the receive-only Sticky Notes
 extension into an offline calendar for the Xteink X3. The existing ESP-NOW
 protocol and dated note files remain the compatibility foundation.
 
+For the implemented user workflow, data ownership, SD-card paths, and failure
+diagnostics, see [Calendar Lock Screen and Notion Sync](./notion-calendar.md).
+
 ## Product boundary
 
 - The Xteink X3 is the primary hardware target because its DS3231 provides a

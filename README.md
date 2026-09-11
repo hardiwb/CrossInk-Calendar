@@ -4,7 +4,7 @@
 >
 > **Warning: this Calendar firmware is for the Xteink X3 only. Do not install it on an Xteink X4.** Its RTC timer-wake and GPIO13 power handling target X3 hardware and are not supported on the X4.
 >
-> **Calendar is still under development.** Entries can be synced from BS-Pro over **ESP-NOW** or edited from the reader's local web interface.
+> **Calendar is still under development.** Entries can be synced from BS-Pro over **ESP-NOW**, imported read-only from a **Notion agenda**, or edited from the reader's local web interface.
 
 ### Supported Devices
 
@@ -24,6 +24,7 @@ The main goal of this fork is to add a small productivity layer to CrossInk with
 - Added **Calendar** support to the Xteink X3.
 - Added an optional **Hourglass Clock** footer to the Calendar sleep screen. Its 24 rounded hour blocks fill throughout the day, with automatic battery-powered updates every 30 minutes, 1 hour, 3 hours, 6 hours, 12 hours, or 24 hours.
 - Calendar entries can be viewed, added, edited, and deleted from a phone or computer through the reader's local web interface.
+- The X3 can download a shared Notion agenda directly over Wi-Fi and atomically replace its local Calendar without modifying Notion. See [Calendar Lock Screen and Notion Sync](./docs/notion-calendar.md).
 - Opening **Calendar** shows the full month view while ESP-NOW listens in the background. Use the short **Browse** shortcut beside Back to open File Transfer, then select **Calendar** in the browser.
 - Any ESP32 can send notes using the documented [Sticky Notes ESP-NOW protocol](./docs/sticky-notes-esp-now-sender.md); BrokenSignal-Pro is not required.
 - Received notes can be saved as the device's persistent sleep-screen note.

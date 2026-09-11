@@ -9,6 +9,8 @@ Welcome to the **CrossInk** firmware. This guide covers day-to-day device use.
 For focused reference material, see [Reader Features](./reader-features.md),
 [Controls](./controls.md), [SD Card Fonts](./sd-card-fonts.md),
 [File Transfer](./webserver.md), and [Troubleshooting](./troubleshooting.md).
+This fork's Xteink X3 workflow is documented separately in
+[Calendar Lock Screen and Notion Sync](./notion-calendar.md).
 
 - [CrossInk User Guide](#crossink-user-guide)
   - [1. Hardware Overview](#1-hardware-overview)
@@ -23,7 +25,8 @@ For focused reference material, see [Reader Features](./reader-features.md),
     - [3.3 Browse Files Screen](#33-browse-files-screen)
     - [3.4 Recent Books Screen](#34-recent-books-screen)
     - [3.5 File Transfer Screen](#35-file-transfer-screen)
-    - [3.5.1 Calibre Wireless Transfers](#351-calibre-wireless-transfers)
+      - [3.5.1 Calibre Wireless Transfers](#351-calibre-wireless-transfers)
+      - [3.5.2 Notion Calendar Sync (X3)](#352-notion-calendar-sync-x3)
     - [3.6 Settings](#36-settings)
       - [3.6.1 Display](#361-display)
       - [3.6.2 Reader](#362-reader)
@@ -154,6 +157,16 @@ CrossInk supports sending books from Calibre using the CrossPoint Reader device 
    2.4 GHz Wi-Fi network as the computer.
 4. Keep the Calibre Wireless screen open, then use Calibre's **Send to device**
    action. The device screen shows the transfer progress and completion notice.
+
+### 3.5.2 Notion Calendar Sync (X3)
+
+The Xteink X3 can download a Notion agenda directly to its local Calendar. Use
+the web Calendar page once to save an internal integration token and database
+URL or ID, then choose **File Transfer > Notion Calendar** on the device for
+each read-only download. A successful download replaces the local Calendar;
+Notion content is never modified. See
+[Calendar Lock Screen and Notion Sync](./notion-calendar.md) for setup,
+security, recovery behavior, lock-screen settings, and troubleshooting.
 
 ### 3.6 Settings
 
@@ -506,6 +519,7 @@ The **Sleep Screen** setting controls what is displayed when the device goes to 
 | **Cover + Custom** | The cover of the currently open book, shown only while actively reading. Falls back to **Custom** behavior when not reading. |
 | **Minimal**        | A compact sleep screen based on the Minimal home layout.                                                                     |
 | **Minimal Stats**  | A compact sleep screen with recent reading stats, on supported devices.                                                      |
+| **Calendar**       | The X3 Calendar for the current RTC date; see [Calendar Lock Screen and Notion Sync](./notion-calendar.md).                  |
 | **None**           | A blank screen.                                                                                                              |
 
 #### Cover settings

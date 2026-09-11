@@ -8,6 +8,10 @@ fixed-size char buffer.
 
 ## `calendar/YYYY-MM-DD.bin`
 
+Notion connection metadata and the transactional directory layout surrounding
+these files are documented in
+[Calendar Lock Screen and Notion Sync](./notion-calendar.md#sd-card-data-and-recovery).
+
 ### Version 1
 
 Sticky Notes stores one complete UTF-8 message per date under
